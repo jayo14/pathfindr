@@ -1,0 +1,63 @@
+name: PathFindr CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-test:
+    name: Django API Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -r backend/requirements
+      - name: Run migrations
+        run: cd backend && python manage.py migrate --run-syncdb
+        env:
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          DEBUG: "True"
+      - name: Run tests
+        run: cd backend && python manage.py test api --verbosity=2
+        env:
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          DEBUG: "True"
+      - name: Django security check
+        run: cd backend && python manage.py check
+        env:
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          DEBUG: "True"
+
+  mobile-lint:
+    name: Mobile TypeScript Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install bun
+        run: curl -fsSL https://bun.sh/install | bash && echo "$HOME/.bun/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: cd mobile && bun install
+      - name: TypeScript check
+        run: cd mobile && bunx tsc --noEmit
+
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: cd frontend && npm ci
+      - name: Lint
+        run: cd frontend && npm run lint

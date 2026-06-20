@@ -1,0 +1,360 @@
+import { Stack, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
+import {
+  ArrowUpRight,
+  MapPinned,
+  Navigation,
+  CornerDownLeft,
+  CornerDownRight,
+  Share2,
+  Navigation2
+} from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  Pressable,
+  Alert
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { NativeMapView, NativeMarker } from '@/components/NativeMapView';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { StateCard } from '@/components/StateCard';
+import { theme } from '@/constants/theme';
+import { useBuildings } from '@/hooks/useCampusData';
+import { useDirections } from '@/hooks/useDirections';
+import { useUserLocation } from '@/hooks/useUserLocation';
+import { formatDistance } from '@/utils/geo';
+import { generateSteps, NavigationStep } from '@/utils/navigation-steps';
+
+export default function DirectionsScreen() {
+  const params = useLocalSearchParams<{ buildingId: string }>();
+  const { buildings } = useBuildings();
+  const { location } = useUserLocation();
+  const [isActiveNav, setIsActiveNav] = useState(false);
+
+  const destination = useMemo(
+    () => buildings.find((building) => building.id === params.buildingId),
+    [buildings, params.buildingId],
+  );
+
+  const origin = location ?? buildings[0]?.coordinate;
+  const directionsQuery = useDirections(origin, destination?.coordinate);
+
+  const steps = useMemo(() => {
+    if (directionsQuery.data?.instructions && directionsQuery.data.instructions.length > 0) {
+      return directionsQuery.data.instructions.map((inst: any) => ({
+        instruction: inst.instruction,
+        distanceMeters: inst.distanceMeters,
+        icon: (inst.instruction.includes("Turn left") ? "turn-left" :
+              inst.instruction.includes("Turn right") ? "turn-right" :
+              inst.instruction.includes("Arrived") || inst.instruction.includes("arrived") ? "arrive" : "straight") as NavigationStep["icon"]
+      }));
+    }
+    if (!directionsQuery.data?.points || !destination) return [];
+    return generateSteps(directionsQuery.data.points, destination.name);
+  }, [directionsQuery.data?.points, directionsQuery.data?.instructions, destination]);
+
+  const handleShare = async () => {
+    if (!destination) return;
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(`pathfindr://directions?buildingId=${destination.id}`, {
+        dialogTitle: `Share route to ${destination.name}`,
+      });
+    } else {
+      Alert.alert('Sharing unavailable', 'Your device does not support sharing.');
+    }
+  };
+
+  const toggleActiveNav = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsActiveNav(!isActiveNav);
+  };
+
+  if (!destination || !origin) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StateCard title="Directions unavailable" description="Pick a destination from the map to start routing." />
+      </SafeAreaView>
+    );
+  }
+
+  const mapRegion = {
+    latitude: (origin.latitude + destination.coordinate.latitude) / 2,
+    longitude: (origin.longitude + destination.coordinate.longitude) / 2,
+    latitudeDelta: Math.abs(origin.latitude - destination.coordinate.latitude) * 3 + 0.004,
+    longitudeDelta: Math.abs(origin.longitude - destination.coordinate.longitude) * 3 + 0.004,
+  };
+
+  const markers: NativeMarker[] = [
+    {
+      id: destination.id,
+      coordinate: destination.coordinate,
+      title: destination.name,
+      color: theme.colors.accent,
+    },
+  ];
+
+  const StepIcon = ({ type }: { type: NavigationStep['icon'] }) => {
+    switch (type) {
+      case 'straight': return <Navigation size={18} color={theme.colors.primary} />;
+      case 'turn-left': return <CornerDownLeft size={18} color={theme.colors.primary} />;
+      case 'turn-right': return <CornerDownRight size={18} color={theme.colors.primary} />;
+      case 'arrive': return <MapPinned size={18} color={theme.colors.accent} />;
+      default: return null;
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container} testID="directions-screen" edges={['bottom']}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <NativeMapView
+        region={mapRegion}
+        markers={markers}
+        route={directionsQuery.data?.points ?? []}
+        userLocation={origin}
+        style={styles.map}
+        followsUserLocation={isActiveNav}
+        showsUserLocation={isActiveNav}
+      />
+
+      <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay]}>
+        <View style={styles.headerRow}>
+          <View style={styles.iconWrap}>
+            <MapPinned color={theme.colors.primary} size={20} />
+          </View>
+          <View style={styles.headerCopy}>
+            <Text style={styles.routeLabel}>Walking to</Text>
+            <Text style={styles.routeTitle}>{destination.name}</Text>
+          </View>
+          <Pressable onPress={handleShare} style={styles.shareButton}>
+            <Share2 size={20} color={theme.colors.primary} />
+          </Pressable>
+        </View>
+
+        {directionsQuery.isLoading ? (
+          <StateCard title="Drawing route" description="Calculating the best walking path across campus." loading />
+        ) : directionsQuery.data ? (
+          <>
+            <View style={styles.metricsRow}>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{formatDistance(directionsQuery.data.distanceMeters)}</Text>
+                <Text style={styles.metricLabel}>Distance</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>{directionsQuery.data.durationMinutes} min</Text>
+                <Text style={styles.metricLabel}>Walk time</Text>
+              </View>
+            </View>
+
+            <View style={styles.stepsContainer}>
+              <Text style={styles.stepsTitle}>Navigation Steps</Text>
+              <FlatList
+                data={steps}
+                keyExtractor={(_, index) => index.toString()}
+                renderItem={({ item, index }) => (
+                  <View style={[styles.stepRow, index === 0 && isActiveNav && styles.highlightedStep]}>
+                    <View style={styles.stepIconWrap}>
+                      <StepIcon type={item.icon} />
+                    </View>
+                    <View style={styles.stepContent}>
+                      <Text style={styles.stepInstruction}>{item.instruction}</Text>
+                      {item.distanceMeters > 0 && (
+                        <Text style={styles.stepDistance}>{item.distanceMeters}m</Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+                style={styles.stepsList}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+              />
+            </View>
+          </>
+        ) : (
+          <StateCard title="Route fallback ready" description="A simplified path is shown while live routing is unavailable." />
+        )}
+
+        <View style={styles.actionRow}>
+          <PrimaryButton
+            label={isActiveNav ? "Stop Navigation" : "Start Active Nav"}
+            onPress={toggleActiveNav}
+            variant={isActiveNav ? "secondary" : "primary"}
+            style={styles.actionButton}
+          />
+          {!isActiveNav && (
+            <Pressable
+              style={styles.refreshButton}
+              onPress={() => void directionsQuery.refetch()}
+            >
+              <Navigation2 size={20} color={theme.colors.primary} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  map: {
+    flex: 1,
+  },
+  overlayCard: {
+    margin: 18,
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    padding: 18,
+    gap: 16,
+    ...theme.shadow,
+    maxHeight: '60%',
+  },
+  activeOverlay: {
+    borderColor: theme.colors.primary,
+    borderWidth: 2,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  routeLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
+    textTransform: 'uppercase',
+  },
+  routeTitle: {
+    color: theme.colors.text,
+    fontSize: 20,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  shareButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCard: {
+    flex: 1,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surfaceAlt,
+    padding: 12,
+    gap: 4,
+    alignItems: 'center',
+  },
+  metricValue: {
+    color: theme.colors.text,
+    fontSize: 20,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  metricLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontFamily: 'Poppins_700Bold',
+  },
+  stepsContainer: {
+    flex: 1,
+    gap: 8,
+  },
+  stepsTitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.text,
+    marginLeft: 4,
+  },
+  stepsList: {
+    maxHeight: 200,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    gap: 12,
+  },
+  highlightedStep: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: 12,
+    borderBottomWidth: 0,
+  },
+  stepIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  stepContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  stepInstruction: {
+    fontSize: 14,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.text,
+    flex: 1,
+  },
+  stepDistance: {
+    fontSize: 12,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.textMuted,
+    marginLeft: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  actionButton: {
+    flex: 1,
+  },
+  refreshButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: theme.colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+});

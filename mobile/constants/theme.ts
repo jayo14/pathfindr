@@ -1,0 +1,50 @@
+export const theme = {
+  colors: {
+    background: "#F4F7F2",
+    surface: "#FFFFFF",
+    surfaceAlt: "#E8F2E6",
+    card: "#FDFEFC",
+    primary: "#0D8C60",
+    primaryDark: "#066848",
+    accent: "#F2B84B",
+    text: "#102418",
+    textMuted: "#5E7367",
+    border: "#D4E1D4",
+    danger: "#C53D4A",
+    success: "#1F9A63",
+    overlay: "rgba(11, 30, 19, 0.08)",
+    mapTint: "#D7F0DD",
+  },
+  radius: {
+    sm: 12,
+    md: 18,
+    lg: 24,
+    xl: 32,
+    pill: 999,
+  },
+  spacing: {
+    xs: 6,
+    sm: 10,
+    md: 16,
+    lg: 20,
+    xl: 28,
+    xxl: 36,
+  },
+  shadow: {
+    shadowColor: "#0B1E13",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+} as const;
+
+export const categoryColors = {
+  faculty: "#0D8C60",
+  department: "#2078B4",
+  library: "#7C5CFA",
+  lab: "#F27C42",
+  admin: "#2D5B4B",
+  facility: "#D85B73",
+  hostel: "#A06A20",
+} as const;

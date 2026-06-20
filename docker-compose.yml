@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=pathfindr
+      - POSTGRES_USER=pathfindr
+      - POSTGRES_PASSWORD=pathfindr
+  backend:
+    build: ./backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SECRET_KEY=django-insecure-dev
+      - DATABASE_URL=postgres://pathfindr:pathfindr@db:5432/pathfindr
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
