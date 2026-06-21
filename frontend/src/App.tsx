@@ -302,7 +302,7 @@ const FooterCTA = () => {
       } else {
         setStatus('error');
       }
-    } catch (err) {
+    } catch {
       setStatus('error');
     }
   };
