@@ -90,3 +90,33 @@ class Waitlist(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class CourseBuilding(models.Model):
+    """
+    Maps a course code (e.g. 'CSC 302') to the building where it is taught.
+
+    This is a lightweight lookup table so the AI assistant can resolve
+    student prompts like "I have CSC 302" to a concrete building_id without
+    relying on the LLM to guess course locations.  Codes are stored
+    normalised to uppercase with a single internal space (e.g. 'CSC 302').
+    """
+    course_code = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        help_text="Normalised course code, e.g. 'CSC 302'",
+    )
+    course_name = models.CharField(max_length=255, blank=True)
+    building = models.ForeignKey(
+        Building,
+        on_delete=models.CASCADE,
+        related_name="courses",
+    )
+
+    class Meta:
+        verbose_name = "Course → Building mapping"
+        verbose_name_plural = "Course → Building mappings"
+
+    def __str__(self):
+        return f"{self.course_code} → {self.building.name}"

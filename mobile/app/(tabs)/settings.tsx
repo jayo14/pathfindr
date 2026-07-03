@@ -25,7 +25,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} testID="settings-screen">
+    <SafeAreaView style={styles.container} edges={['top']} testID="settings-screen">
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>Preferences</Text>
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 28,
+    paddingBottom: 104,
     gap: 16,
   },
   header: {

@@ -20,7 +20,7 @@ import {
   Pressable,
   Alert
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeMapView, NativeMarker } from '@/components/NativeMapView';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -39,6 +39,7 @@ export default function DirectionsScreen() {
   const { location } = useUserLocation();
   const [isActiveNav, setIsActiveNav] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const destination = useMemo(
     () => buildings.find((building) => building.id === params.buildingId),
@@ -167,7 +168,7 @@ export default function DirectionsScreen() {
         </View>
       ) : (
         /* ── Regular bottom sheet ──────────────────────────────────────── */
-        <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay]}>
+        <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay, { bottom: insets.bottom + 16 }]}>
           <View style={styles.headerRow}>
             <View style={styles.iconWrap}>
               <MapPinned color={theme.colors.primary} size={20} />
@@ -307,7 +308,7 @@ const styles = StyleSheet.create({
   overlayCard: {
     margin: 18,
     position: 'absolute',
-    bottom: 20,
+    // `bottom` is set dynamically in JSX using insets.bottom
     left: 0,
     right: 0,
     borderRadius: 28,

@@ -1,7 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  Camera,
   Image as ImageIcon,
   MapPin,
   Package,
@@ -11,7 +10,7 @@ import {
   Clock,
   Phone
 } from 'lucide-react-native';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import {
   FlatList,
   Modal,
@@ -24,7 +23,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { StateCard } from '@/components/StateCard';
 import { theme } from '@/constants/theme';
@@ -39,6 +38,7 @@ export default function LostFoundScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const [form, setForm] = useState({
     title: '',
@@ -53,7 +53,6 @@ export default function LostFoundScreen() {
 
   const allReports = useMemo(() => {
     const combined = [...localReports, ...initialReports];
-    // Deduplicate if necessary (though local items are new)
     return combined.filter((item, index, self) =>
       index === self.findIndex((t) => t.id === item.id)
     );
@@ -73,7 +72,6 @@ export default function LostFoundScreen() {
       aspect: [4, 3],
       quality: 0.7,
     });
-
     if (!result.canceled) {
       setForm({ ...form, image: result.assets[0].uri });
     }
@@ -89,39 +87,32 @@ export default function LostFoundScreen() {
 
   const handleSubmit = async () => {
     if (!validate()) return;
-
     setIsSubmitting(true);
     try {
-      // TODO: Image upload in this phase should use placeholder URL since S3 is not yet configured.
       const payload: Partial<LostItemReport> = {
         title: form.title,
         status: form.status,
         locationName: form.locationName,
         description: form.description,
         contactHint: form.contactHint,
-        imageUrl: form.image ? "https://via.placeholder.com/400" : undefined,
+        imageUrl: form.image ? 'https://via.placeholder.com/400' : undefined,
         reportedAt: new Date().toISOString(),
       };
-
       const result = await submitLostAndFoundReport(payload);
-
       setLocalReports([result, ...localReports]);
       setIsModalVisible(false);
-      setForm({
-        title: '',
-        status: 'lost',
-        locationName: '',
-        description: '',
-        contactHint: '',
-        image: null,
-      });
+      setForm({ title: '', status: 'lost', locationName: '', description: '', contactHint: '', image: null });
       Alert.alert('Success', 'Report submitted!');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to submit report. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // FAB floats above the tab bar, which itself sits above the home indicator.
+  // Tab bar visual base = 56 px; add the bottom inset for the home indicator.
+  const fabBottom = 56 + insets.bottom + 16;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -148,48 +139,37 @@ export default function LostFoundScreen() {
         </View>
       ) : filteredReports.length === 0 ? (
         <View style={styles.centered}>
-          <StateCard
-            title="No reports yet"
-            description="Be the first to help someone find their belongings."
-          />
+          <StateCard title="No reports yet" description="Be the first to help someone find their belongings." />
         </View>
       ) : (
         <FlatList
           data={filteredReports}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
+          // Extra bottom padding so the last card is never hidden behind the FAB or tab bar
+          contentContainerStyle={[styles.list, { paddingBottom: fabBottom + 16 }]}
           renderItem={({ item }) => (
             <View style={styles.itemCard}>
               <View style={styles.itemInfo}>
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: item.status === 'lost' ? '#FEE2E2' : '#DCFCE7' }
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    { color: item.status === 'lost' ? '#EF4444' : '#22C55E' }
-                  ]}>
+                <View style={[styles.statusBadge, { backgroundColor: item.status === 'lost' ? '#FEE2E2' : '#DCFCE7' }]}>
+                  <Text style={[styles.statusText, { color: item.status === 'lost' ? '#EF4444' : '#22C55E' }]}>
                     {item.status.toUpperCase()}
                   </Text>
                 </View>
                 <Text style={styles.itemTitle}>{item.title}</Text>
-
                 <View style={styles.metaRow}>
                   <MapPin size={14} color={theme.colors.textMuted} />
                   <Text style={styles.metaText}>{item.locationName}</Text>
                 </View>
-
                 <View style={styles.metaRow}>
                   <Clock size={14} color={theme.colors.textMuted} />
                   <Text style={styles.metaText}>{timeAgo(item.reportedAt)}</Text>
                 </View>
-
-                {item.contactHint && (
+                {item.contactHint ? (
                   <View style={styles.metaRow}>
                     <Phone size={14} color={theme.colors.textMuted} />
                     <Text style={styles.metaText} numberOfLines={1}>{item.contactHint}</Text>
                   </View>
-                )}
+                ) : null}
               </View>
               {item.imageUrl ? (
                 <Image source={{ uri: item.imageUrl }} style={styles.itemImage} contentFit="cover" />
@@ -205,12 +185,14 @@ export default function LostFoundScreen() {
         />
       )}
 
-      <Pressable style={styles.fab} onPress={() => setIsModalVisible(true)}>
+      {/* FAB positioned above the tab bar + home indicator */}
+      <Pressable style={[styles.fab, { bottom: fabBottom }]} onPress={() => setIsModalVisible(true)}>
         <Plus color="white" size={28} />
       </Pressable>
 
       <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet">
-        <SafeAreaView style={styles.modalContainer}>
+        {/* Only protect top — the sheet itself extends to device bottom */}
+        <SafeAreaView style={styles.modalContainer} edges={['top']}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Report Item</Text>
             <Pressable onPress={() => setIsModalVisible(false)}>
@@ -222,13 +204,13 @@ export default function LostFoundScreen() {
             <View style={styles.toggleRow}>
               <Pressable
                 style={[styles.toggleBtn, form.status === 'lost' && styles.toggleBtnActive]}
-                onPress={() => setForm({...form, status: 'lost'})}
+                onPress={() => setForm({ ...form, status: 'lost' })}
               >
                 <Text style={[styles.toggleText, form.status === 'lost' && styles.toggleTextActive]}>Lost</Text>
               </Pressable>
               <Pressable
                 style={[styles.toggleBtn, form.status === 'found' && styles.toggleBtnActive]}
-                onPress={() => setForm({...form, status: 'found'})}
+                onPress={() => setForm({ ...form, status: 'found' })}
               >
                 <Text style={[styles.toggleText, form.status === 'found' && styles.toggleTextActive]}>Found</Text>
               </Pressable>
@@ -240,9 +222,9 @@ export default function LostFoundScreen() {
                 style={[styles.modalInput, errors.title && styles.inputError]}
                 placeholder="e.g. Black Lenovo Backpack"
                 value={form.title}
-                onChangeText={text => setForm({...form, title: text})}
+                onChangeText={text => setForm({ ...form, title: text })}
               />
-              {errors.title && <Text style={styles.errorText}>{errors.title}</Text>}
+              {errors.title ? <Text style={styles.errorText}>{errors.title}</Text> : null}
             </View>
 
             <View style={styles.inputGroup}>
@@ -251,9 +233,9 @@ export default function LostFoundScreen() {
                 style={[styles.modalInput, errors.locationName && styles.inputError]}
                 placeholder="e.g. Near Library Block"
                 value={form.locationName}
-                onChangeText={text => setForm({...form, locationName: text})}
+                onChangeText={text => setForm({ ...form, locationName: text })}
               />
-              {errors.locationName && <Text style={styles.errorText}>{errors.locationName}</Text>}
+              {errors.locationName ? <Text style={styles.errorText}>{errors.locationName}</Text> : null}
             </View>
 
             <View style={styles.inputGroup}>
@@ -264,7 +246,7 @@ export default function LostFoundScreen() {
                 multiline
                 numberOfLines={4}
                 value={form.description}
-                onChangeText={text => setForm({...form, description: text})}
+                onChangeText={text => setForm({ ...form, description: text })}
               />
             </View>
 
@@ -274,7 +256,7 @@ export default function LostFoundScreen() {
                 style={styles.modalInput}
                 placeholder="e.g. WhatsApp +234..."
                 value={form.contactHint}
-                onChangeText={text => setForm({...form, contactHint: text})}
+                onChangeText={text => setForm({ ...form, contactHint: text })}
               />
             </View>
 
@@ -286,14 +268,14 @@ export default function LostFoundScreen() {
                   <Text style={styles.photoBtnText}>Pick from Gallery</Text>
                 </Pressable>
               </View>
-              {form.image && (
+              {form.image ? (
                 <View style={styles.previewContainer}>
                   <Image source={{ uri: form.image }} style={styles.previewImage} />
-                  <Pressable style={styles.removePhoto} onPress={() => setForm({...form, image: null})}>
+                  <Pressable style={styles.removePhoto} onPress={() => setForm({ ...form, image: null })}>
                     <X size={16} color="white" />
                   </Pressable>
                 </View>
-              )}
+              ) : null}
             </View>
 
             <Pressable
@@ -316,15 +298,15 @@ export default function LostFoundScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: { padding: 24, backgroundColor: 'white' },
+  header: { padding: 24, backgroundColor: theme.colors.surface },
   title: { fontSize: 28, fontFamily: 'Poppins_800ExtraBold', color: theme.colors.text },
   subtitle: { fontSize: 14, fontFamily: 'DMSans_400Regular', color: theme.colors.textMuted, marginTop: 4 },
-  searchContainer: { padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  searchContainer: { padding: 16, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 16, height: 48 },
   searchInput: { flex: 1, fontFamily: 'DMSans_400Regular', fontSize: 15 },
   list: { padding: 16, gap: 12 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  itemCard: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 20, padding: 14, gap: 14, ...theme.shadow, elevation: 2 },
+  itemCard: { flexDirection: 'row', backgroundColor: theme.colors.surface, borderRadius: 20, padding: 14, gap: 14, ...theme.shadow, elevation: 2 },
   itemInfo: { flex: 1 },
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 8 },
   statusText: { fontSize: 11, fontFamily: 'Poppins_700Bold' },
@@ -333,8 +315,8 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 13, color: theme.colors.textMuted, fontFamily: 'DMSans_400Regular' },
   itemImage: { width: 90, height: 90, borderRadius: 16 },
   placeholderImage: { width: 90, height: 90, borderRadius: 16, backgroundColor: theme.colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
-  fab: { position: 'absolute', right: 24, bottom: 24, width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', ...theme.shadow, elevation: 8 },
-  modalContainer: { flex: 1, backgroundColor: 'white' },
+  fab: { position: 'absolute', right: 24, width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', ...theme.shadow, elevation: 8 },
+  modalContainer: { flex: 1, backgroundColor: theme.colors.surface },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   modalTitle: { fontSize: 22, fontFamily: 'Poppins_800ExtraBold' },
   modalContent: { padding: 24 },

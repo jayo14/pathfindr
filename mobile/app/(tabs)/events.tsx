@@ -13,7 +13,7 @@ export default function EventsScreen() {
   const { events, isLoading } = useEvents();
 
   return (
-    <SafeAreaView style={styles.container} testID="events-screen">
+    <SafeAreaView style={styles.container} edges={['top']} testID="events-screen">
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Campus pulse</Text>
         <Text style={styles.title}>Upcoming events</Text>
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 100,
     gap: 16,
   },
   eventCard: {

@@ -1,4 +1,4 @@
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
@@ -26,6 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 export default function BuildingDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
 
   const { data: building, isLoading, error } = useQuery({
     queryKey: ["building", id],
@@ -72,7 +73,7 @@ export default function BuildingDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView bounces={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView bounces={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 + insets.bottom }]}>
         <View style={styles.heroContainer}>
           <Image
             source={{ uri: building.imageUrl }}
@@ -168,7 +169,7 @@ export default function BuildingDetailScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
         <PrimaryButton
           label="Get Directions"
           onPress={handleGetDirections}
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   scrollContent: {
-    paddingBottom: 100,
+    // paddingBottom is set dynamically via insets to clear the bottom bar
   },
   centered: {
     flex: 1,
@@ -373,7 +374,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 32,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     ...theme.shadow,

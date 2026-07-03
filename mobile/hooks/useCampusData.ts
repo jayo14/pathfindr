@@ -8,6 +8,7 @@ import {
     CampusEvent,
     LostItemReport,
 } from "@/types/domain";
+import { searchBuildings } from "@/utils/search";
 
 export function useCampusData() {
   return useQuery({
@@ -64,29 +65,10 @@ export function useFilteredBuildings(
 ) {
   const { buildings, ...query } = useBuildings();
 
-  const filtered = useMemo<Building[]>(() => {
-    const normalizedQuery = queryText.trim().toLowerCase();
-
-    return buildings.filter((building) => {
-      const matchesCategory =
-        category === "all" ? true : building.category === category;
-      const matchesQuery =
-        normalizedQuery.length === 0
-          ? true
-          : [
-              building.name,
-              building.code,
-              ...building.tags,
-              ...building.departments,
-              ...building.facilities,
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(normalizedQuery);
-
-      return matchesCategory && matchesQuery;
-    });
-  }, [buildings, category, queryText]);
+  const filtered = useMemo<Building[]>(
+    () => searchBuildings(buildings, { query: queryText, category }),
+    [buildings, category, queryText],
+  );
 
   return {
     ...query,
