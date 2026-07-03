@@ -1,6 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, Map, MessageCircle, Navigation } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Calendar, Home, Map, MessageCircle, Navigation } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
@@ -31,7 +30,7 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* Tab 1 — Home */}
+      {/* 1 — Home */}
       <Tabs.Screen
         name="index"
         options={{
@@ -40,25 +39,16 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Tab 2 — Map (centre FAB) */}
+      {/* 2 — Map */}
       <Tabs.Screen
         name="map"
         options={{
           title: 'Map',
-          tabBarButton: ({ style, onPress }) => (
-            <Pressable
-              onPress={onPress as any}
-              style={[style as any, styles.fabContainer]}
-            >
-              <View style={styles.fab}>
-                <Map size={28} color="#FFF" />
-              </View>
-            </Pressable>
-          ),
+          tabBarIcon: ({ color, size }) => <Map size={size} color={color} />,
         }}
       />
 
-      {/* Tab 3 — Chat */}
+      {/* 3 — Chat */}
       <Tabs.Screen
         name="ai-assistant"
         options={{
@@ -67,7 +57,7 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Tab 4 — Directions */}
+      {/* 4 — Directions */}
       <Tabs.Screen
         name="directions"
         options={{
@@ -76,30 +66,18 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Hidden tabs — still navigable by URL, just not shown in the bar */}
-      <Tabs.Screen name="events"     options={{ href: null }} />
+      {/* 5 — Events */}
+      <Tabs.Screen
+        name="events"
+        options={{
+          title: 'Events',
+          tabBarIcon: ({ color, size }) => <Calendar size={size} color={color} />,
+        }}
+      />
+
+      {/* Hidden — still navigable by URL, not shown in the bar */}
       <Tabs.Screen name="lost-found" options={{ href: null }} />
       <Tabs.Screen name="settings"   options={{ href: null }} />
     </Tabs>
   );
 }
-
-const styles = StyleSheet.create({
-  fabContainer: {
-    top: -28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fab: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...theme.shadow,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: '#FFF',
-  },
-});

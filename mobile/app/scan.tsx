@@ -1,12 +1,11 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, CameraView } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import { Clipboard, QrCode, ScanLine, X } from 'lucide-react-native';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -19,50 +18,75 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { StateCard } from '@/components/StateCard';
 import { theme } from '@/constants/theme';
 
-// ── Deep-link / URL parser ────────────────────────────────────────────────
+// ── Permission status type ────────────────────────────────────────────────
+type PermStatus = 'loading' | 'granted' | 'denied' | 'can-ask';
 
+// ── Deep-link / URL parser ────────────────────────────────────────────────
 /**
  * Parse a scanned payload and return a local Expo Router path if recognised,
  * or null if the payload is not a known PathFindr link.
  *
- * Accepted formats:
+ * Accepted formats
  *   pathfindr://building/<id>
  *   pathfindr://directions?buildingId=<id>
- *   https://rork.com/building/<id>          (web fallback)
- *   <bare building id>                       (e.g. "library-complex")
+ *   https://<host>/building/<id>
+ *   <bare building slug>  (letters, digits and hyphens, ≥3 chars)
  */
 function parsePayload(raw: string): string | null {
   const text = raw.trim();
 
-  // 1. Deep link — pathfindr://building/<id>
   const deepBuilding = text.match(/^(?:pathfindr|rork-app):\/\/building\/([^?#/\s]+)/i);
   if (deepBuilding) return `/building/${deepBuilding[1]}`;
 
-  // 2. Deep link — pathfindr://directions?buildingId=<id>
   const deepDir = text.match(/^(?:pathfindr|rork-app):\/\/directions\?buildingId=([^&#\s]+)/i);
   if (deepDir) return `/directions?buildingId=${deepDir[1]}`;
 
-  // 3. HTTPS web URL — https://<host>/building/<id>
   const webBuilding = text.match(/https?:\/\/[^/]+\/building\/([^?#/\s]+)/i);
   if (webBuilding) return `/building/${webBuilding[1]}`;
 
-  // 4. Bare building slug — only letters, digits, and hyphens, ≥3 chars
   if (/^[a-z0-9-]{3,}$/i.test(text)) return `/building/${text}`;
 
   return null;
 }
 
-// ── Scan screen ───────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────
 export default function ScanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [permission, requestPermission] = useCameraPermissions();
+
+  const [permStatus, setPermStatus] = useState<PermStatus>('loading');
+  const [canAskAgain, setCanAskAgain] = useState(true);
   const [scanned, setScanned] = useState(false);
   const [manualText, setManualText] = useState('');
   const [manualError, setManualError] = useState('');
   const isProcessing = useRef(false);
 
-  // Navigate to the resolved path and show an error if unrecognised
+  // Check permission on mount
+  useEffect(() => {
+    Camera.getCameraPermissionsAsync().then(result => {
+      if (result.granted) {
+        setPermStatus('granted');
+      } else if (result.canAskAgain) {
+        setPermStatus('can-ask');
+        setCanAskAgain(true);
+      } else {
+        setPermStatus('denied');
+        setCanAskAgain(false);
+      }
+    }).catch(() => setPermStatus('can-ask'));
+  }, []);
+
+  const requestPermission = useCallback(async () => {
+    const result = await Camera.requestCameraPermissionsAsync();
+    if (result.granted) {
+      setPermStatus('granted');
+    } else {
+      setCanAskAgain(result.canAskAgain ?? false);
+      setPermStatus('denied');
+    }
+  }, []);
+
+  // Navigate to the resolved path or show a friendly error
   const handlePayload = useCallback((raw: string) => {
     if (isProcessing.current) return;
     isProcessing.current = true;
@@ -70,10 +94,7 @@ export default function ScanScreen() {
     const path = parsePayload(raw);
     if (path) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Small delay so the haptic fires before the screen transition
-      setTimeout(() => {
-        router.replace(path as any);
-      }, 120);
+      setTimeout(() => router.replace(path as any), 120);
     } else {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setScanned(false);
@@ -102,33 +123,34 @@ export default function ScanScreen() {
     handlePayload(text);
   };
 
-  // ── Permission states ─────────────────────────────────────────────────
-
-  if (!permission) {
-    // Still loading permission state
+  // ── Still checking permissions ────────────────────────────────────────
+  if (permStatus === 'loading') {
     return <View style={styles.root} />;
   }
 
-  if (!permission.granted) {
+  // ── Need to ask / was denied ─────────────────────────────────────────
+  if (permStatus !== 'granted') {
     return (
-      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.permRoot} edges={['top', 'bottom']}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.permissionScreen}>
-          <View style={styles.permissionIcon}>
+
+        <View style={styles.permScreen}>
+          <View style={styles.permIconWrap}>
             <QrCode size={48} color={theme.colors.primary} />
           </View>
-          <Text style={styles.permissionTitle}>Camera access needed</Text>
-          <Text style={styles.permissionBody}>
-            PathFindr uses your camera to scan QR codes on campus signage and open
-            building information instantly. Your camera is only active while you are
-            on this screen.
+
+          <Text style={styles.permTitle}>Camera access needed</Text>
+          <Text style={styles.permBody}>
+            PathFindr uses your camera to scan QR codes on campus signage and
+            open building information instantly. Your camera is only active
+            while you are on this screen.
           </Text>
 
-          {permission.canAskAgain ? (
+          {permStatus === 'can-ask' ? (
             <PrimaryButton
               label="Grant camera access"
               onPress={() => void requestPermission()}
-              style={styles.permissionBtn}
+              style={styles.permBtn}
             />
           ) : (
             <>
@@ -139,14 +161,14 @@ export default function ScanScreen() {
               <PrimaryButton
                 label="Open Settings"
                 onPress={() => void Linking.openSettings()}
-                style={styles.permissionBtn}
+                style={styles.permBtn}
               />
             </>
           )}
 
-          {/* Manual fallback always available even without camera */}
+          {/* Manual fallback always available */}
           <View style={styles.manualSection}>
-            <Text style={styles.manualLabel}>Paste a link or building ID instead</Text>
+            <Text style={styles.manualLabel}>Or paste a link / building ID</Text>
             <View style={styles.manualRow}>
               <TextInput
                 style={styles.manualInput}
@@ -159,12 +181,7 @@ export default function ScanScreen() {
               />
             </View>
             {manualError ? <Text style={styles.manualError}>{manualError}</Text> : null}
-            <PrimaryButton
-              label="Go"
-              variant="secondary"
-              onPress={handleManualSubmit}
-              style={styles.manualBtn}
-            />
+            <PrimaryButton label="Go" variant="secondary" onPress={handleManualSubmit} style={styles.manualBtn} />
           </View>
 
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -187,7 +204,7 @@ export default function ScanScreen() {
         onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
       />
 
-      {/* Dark vignette overlay with cut-out hint */}
+      {/* Dark vignette */}
       <View style={styles.overlay} pointerEvents="none">
         <View style={styles.scanWindow} />
       </View>
@@ -201,7 +218,7 @@ export default function ScanScreen() {
         <View style={{ width: 40 }} />
       </SafeAreaView>
 
-      {/* Scan frame corners */}
+      {/* Frame corners */}
       <View style={styles.frameWrap} pointerEvents="none">
         <View style={[styles.corner, styles.cornerTL]} />
         <View style={[styles.corner, styles.cornerTR]} />
@@ -211,7 +228,10 @@ export default function ScanScreen() {
       </View>
 
       {/* Bottom panel */}
-      <SafeAreaView style={[styles.bottomPanel, { paddingBottom: insets.bottom + 8 }]} edges={['bottom']}>
+      <SafeAreaView
+        style={[styles.bottomPanel, { paddingBottom: insets.bottom + 8 }]}
+        edges={['bottom']}
+      >
         <Text style={styles.hint}>
           Point your camera at a PathFindr QR code on campus signage
         </Text>
@@ -225,7 +245,6 @@ export default function ScanScreen() {
           />
         )}
 
-        {/* Manual paste fallback */}
         <View style={styles.manualSection}>
           <Text style={styles.manualLabelLight}>Or paste a link / building ID</Text>
           <View style={styles.manualRow}>
@@ -255,29 +274,29 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
 
   // Permission screen
-  permissionScreen: {
+  permRoot: { flex: 1, backgroundColor: theme.colors.background },
+  permScreen: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
     gap: 16,
-    backgroundColor: theme.colors.background,
   },
-  permissionIcon: {
+  permIconWrap: {
     width: 88, height: 88, borderRadius: 28,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 8,
   },
-  permissionTitle: {
+  permTitle: {
     fontSize: 24, fontFamily: 'Poppins_800ExtraBold',
     color: theme.colors.text, textAlign: 'center',
   },
-  permissionBody: {
+  permBody: {
     fontSize: 15, fontFamily: 'DMSans_400Regular',
     color: theme.colors.textMuted, textAlign: 'center', lineHeight: 22,
   },
-  permissionBtn: { width: '100%' },
+  permBtn: { width: '100%' },
   backBtn: {
     paddingVertical: 12, paddingHorizontal: 24,
     borderRadius: theme.radius.pill,
@@ -292,13 +311,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The scan window punches a transparent hole in the overlay
-  scanWindow: {
-    width: WINDOW_SIZE, height: WINDOW_SIZE,
-    backgroundColor: 'transparent',
-    // React Native's backgroundColor trick: the parent dims everything, the
-    // transparent child shows through.
-  },
+  scanWindow: { width: WINDOW_SIZE, height: WINDOW_SIZE, backgroundColor: 'transparent' },
 
   // Top bar
   topBar: {
@@ -314,11 +327,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center', justifyContent: 'center',
   },
-  scanTitle: {
-    fontSize: 16, fontFamily: 'Poppins_700Bold', color: '#FFF',
-  },
+  scanTitle: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: '#FFF' },
 
-  // Scan frame
+  // Frame corners
   frameWrap: {
     position: 'absolute',
     width: WINDOW_SIZE, height: WINDOW_SIZE,
@@ -328,11 +339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
-  corner: {
-    position: 'absolute',
-    width: 28, height: 28,
-    borderColor: '#FFF',
-  },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: '#FFF' },
   cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 4 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 4 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 4 },
@@ -346,23 +353,27 @@ const styles = StyleSheet.create({
     gap: 14,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  hint: { fontSize: 14, fontFamily: 'DMSans_400Regular', color: 'rgba(255,255,255,0.8)', textAlign: 'center' },
+  hint: {
+    fontSize: 14, fontFamily: 'DMSans_400Regular',
+    color: 'rgba(255,255,255,0.8)', textAlign: 'center',
+  },
   rescanBtn: { width: '100%' },
 
   // Manual entry
   manualSection: { gap: 8, width: '100%' },
-  manualLabel: { fontSize: 13, fontFamily: 'Poppins_700Bold', color: theme.colors.textMuted, textAlign: 'center' },
-  manualLabelLight: { fontSize: 13, fontFamily: 'Poppins_700Bold', color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
+  manualLabel: {
+    fontSize: 13, fontFamily: 'Poppins_700Bold',
+    color: theme.colors.textMuted, textAlign: 'center',
+  },
+  manualLabelLight: {
+    fontSize: 13, fontFamily: 'Poppins_700Bold',
+    color: 'rgba(255,255,255,0.7)', textAlign: 'center',
+  },
   manualRow: { flexDirection: 'row', gap: 8 },
   manualInput: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    fontFamily: 'DMSans_400Regular',
-    backgroundColor: theme.colors.surface,
-    color: theme.colors.text,
+    flex: 1, height: 48, borderRadius: 14, paddingHorizontal: 14,
+    fontSize: 14, fontFamily: 'DMSans_400Regular',
+    backgroundColor: theme.colors.surface, color: theme.colors.text,
     borderWidth: 1, borderColor: theme.colors.border,
   },
   manualInputDark: {
@@ -376,5 +387,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   manualBtn: { width: '100%' },
-  manualError: { fontSize: 12, fontFamily: 'DMSans_400Regular', color: theme.colors.danger },
+  manualError: {
+    fontSize: 12, fontFamily: 'DMSans_400Regular', color: theme.colors.danger,
+  },
 });
