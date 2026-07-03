@@ -1,5 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
+import { getToken, setToken, TOKEN_KEYS } from './tokenStorage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api';
 
@@ -18,11 +18,11 @@ async function isTokenExpired(token: string): Promise<boolean> {
 }
 
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  let token = await AsyncStorage.getItem('access_token');
+  let token = await getToken(TOKEN_KEYS.ACCESS);
 
   // Proactive expiry check
   if (token && await isTokenExpired(token) && endpoint !== '/auth/login/' && endpoint !== '/auth/refresh/') {
-    const refreshToken = await AsyncStorage.getItem('refresh_token');
+    const refreshToken = await getToken(TOKEN_KEYS.REFRESH);
     if (refreshToken) {
       if (isRefreshing) {
         token = await new Promise((resolve) => {
@@ -38,7 +38,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
           });
           if (refreshResponse.ok) {
             const data = await refreshResponse.json();
-            await AsyncStorage.setItem('access_token', data.access);
+            await setToken(TOKEN_KEYS.ACCESS, data.access);
             token = data.access;
             refreshQueue.forEach(cb => cb(data.access));
           } else {
@@ -85,7 +85,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     }
 
     isRefreshing = true;
-    const refreshToken = await AsyncStorage.getItem('refresh_token');
+    const refreshToken = await getToken(TOKEN_KEYS.REFRESH);
     if (refreshToken) {
       try {
         const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh/`, {
@@ -95,7 +95,7 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
         });
         if (refreshResponse.ok) {
           const data = await refreshResponse.json();
-          await AsyncStorage.setItem('access_token', data.access);
+          await setToken(TOKEN_KEYS.ACCESS, data.access);
           refreshQueue.forEach(cb => cb(data.access));
           return apiRequest<T>(endpoint, options);
         } else {

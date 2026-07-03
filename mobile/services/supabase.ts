@@ -1,7 +1,20 @@
-// NOTE: Supabase is imported but PathFindr currently uses Django JWT auth.
-// This file is reserved for future Supabase Storage integration (image uploads).
-// Do NOT use supabase.auth — use auth-service.ts instead.
-// TODO: Remove if Supabase Storage is not adopted before launch.
+// =============================================================================
+// SUPABASE — NOT ACTIVE IN CURRENT BUILD
+// =============================================================================
+// This file is a placeholder for a possible future feature (e.g. Supabase
+// Storage for profile-image uploads). It is NOT imported by any screen, hook,
+// or service in the current build and plays no role in the demo.
+//
+// Rules:
+//   • Do NOT use supabase.auth — authentication is handled exclusively by
+//     Django JWT via auth-service.ts.
+//   • Do NOT read buildings, events, or lost items from Supabase — all campus
+//     data is served by the Django REST API via campus-service.ts.
+//   • If Supabase Storage is adopted, create a dedicated storage-service.ts
+//     rather than expanding this file.
+//
+// See services/README.md for the full backend map.
+// =============================================================================
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 

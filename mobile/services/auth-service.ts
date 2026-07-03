@@ -1,5 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from './api-client';
+import {
+  getToken,
+  setToken,
+  clearAllTokens,
+  TOKEN_KEYS,
+} from './tokenStorage';
 
 export interface AuthResponse {
   access: string;
@@ -25,13 +30,13 @@ export async function login(username: string, password: string): Promise<{ acces
     method: 'POST',
     body: JSON.stringify({ username, password })
   });
-  await AsyncStorage.setItem('access_token', data.access);
-  await AsyncStorage.setItem('refresh_token', data.refresh);
+  await setToken(TOKEN_KEYS.ACCESS, data.access);
+  await setToken(TOKEN_KEYS.REFRESH, data.refresh);
   return data;
 }
 
 export async function logout(): Promise<void> {
-  await AsyncStorage.multiRemove(['access_token', 'refresh_token']);
+  await clearAllTokens();
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
@@ -39,6 +44,9 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 export async function getStoredTokens(): Promise<{ access: string | null; refresh: string | null }> {
-  const [access, refresh] = await AsyncStorage.multiGet(['access_token', 'refresh_token']);
-  return { access: access[1], refresh: refresh[1] };
+  const [access, refresh] = await Promise.all([
+    getToken(TOKEN_KEYS.ACCESS),
+    getToken(TOKEN_KEYS.REFRESH),
+  ]);
+  return { access, refresh };
 }

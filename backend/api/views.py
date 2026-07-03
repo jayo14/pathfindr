@@ -172,6 +172,7 @@ For general questions: { "intent": "general", "response": "<answer>" }
 Always respond in JSON only. No markdown, no extra text.
 """
 
+@method_decorator(ratelimit(key='ip', rate='10/m', method='POST', block=True), name='dispatch')
 class AIChatView(APIView):
     permission_classes = (permissions.AllowAny,)
 
