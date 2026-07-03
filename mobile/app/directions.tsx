@@ -1,8 +1,9 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import {
   ArrowUpRight,
+  CheckCircle2,
   MapPinned,
   Navigation,
   CornerDownLeft,
@@ -26,6 +27,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { StateCard } from '@/components/StateCard';
 import { theme } from '@/constants/theme';
 import { useBuildings } from '@/hooks/useCampusData';
+import { useArrivalDetection } from '@/hooks/useArrivalDetection';
 import { useDirections } from '@/hooks/useDirections';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { formatDistance } from '@/utils/geo';
@@ -36,6 +38,7 @@ export default function DirectionsScreen() {
   const { buildings } = useBuildings();
   const { location } = useUserLocation();
   const [isActiveNav, setIsActiveNav] = useState(false);
+  const router = useRouter();
 
   const destination = useMemo(
     () => buildings.find((building) => building.id === params.buildingId),
@@ -44,6 +47,13 @@ export default function DirectionsScreen() {
 
   const origin = location ?? buildings[0]?.coordinate;
   const directionsQuery = useDirections(origin, destination?.coordinate);
+
+  const { hasArrived, resetArrival } = useArrivalDetection({
+    destination: destination?.coordinate,
+    userLocation: location,
+    thresholdMeters: 15,
+    isActive: isActiveNav,
+  });
 
   const steps = useMemo(() => {
     if (directionsQuery.data?.instructions && directionsQuery.data.instructions.length > 0) {
@@ -73,7 +83,18 @@ export default function DirectionsScreen() {
 
   const toggleActiveNav = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isActiveNav) {
+      // Stopping navigation also resets arrival so the hook is ready for reuse
+      resetArrival();
+    }
     setIsActiveNav(!isActiveNav);
+  };
+
+  const handleDismissArrival = () => {
+    resetArrival();
+    setIsActiveNav(false);
+    // Navigate back to the map tab
+    router.replace('/(tabs)/map');
   };
 
   if (!destination || !origin) {
@@ -123,80 +144,104 @@ export default function DirectionsScreen() {
         showsUserLocation={isActiveNav}
       />
 
-      <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay]}>
-        <View style={styles.headerRow}>
-          <View style={styles.iconWrap}>
-            <MapPinned color={theme.colors.primary} size={20} />
+      {/* ── Arrival confirmation overlay ───────────────────────────────── */}
+      {hasArrived ? (
+        <View style={styles.arrivalOverlay}>
+          <View style={styles.arrivalCard}>
+            <View style={styles.arrivalIconWrap}>
+              <CheckCircle2 size={40} color={theme.colors.accent} />
+            </View>
+            <Text style={styles.arrivalTitle}>You've arrived!</Text>
+            <Text style={styles.arrivalSubtitle}>
+              {destination.name}
+            </Text>
+            <Text style={styles.arrivalDescription}>
+              You're within 15 m of your destination. Great navigation!
+            </Text>
+            <PrimaryButton
+              label="Back to Map"
+              onPress={handleDismissArrival}
+              style={styles.arrivalButton}
+            />
           </View>
-          <View style={styles.headerCopy}>
-            <Text style={styles.routeLabel}>Walking to</Text>
-            <Text style={styles.routeTitle}>{destination.name}</Text>
-          </View>
-          <Pressable onPress={handleShare} style={styles.shareButton}>
-            <Share2 size={20} color={theme.colors.primary} />
-          </Pressable>
         </View>
-
-        {directionsQuery.isLoading ? (
-          <StateCard title="Drawing route" description="Calculating the best walking path across campus." loading />
-        ) : directionsQuery.data ? (
-          <>
-            <View style={styles.metricsRow}>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{formatDistance(directionsQuery.data.distanceMeters)}</Text>
-                <Text style={styles.metricLabel}>Distance</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricValue}>{directionsQuery.data.durationMinutes} min</Text>
-                <Text style={styles.metricLabel}>Walk time</Text>
-              </View>
+      ) : (
+        /* ── Regular bottom sheet ──────────────────────────────────────── */
+        <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay]}>
+          <View style={styles.headerRow}>
+            <View style={styles.iconWrap}>
+              <MapPinned color={theme.colors.primary} size={20} />
             </View>
-
-            <View style={styles.stepsContainer}>
-              <Text style={styles.stepsTitle}>Navigation Steps</Text>
-              <FlatList
-                data={steps}
-                keyExtractor={(_, index) => index.toString()}
-                renderItem={({ item, index }) => (
-                  <View style={[styles.stepRow, index === 0 && isActiveNav && styles.highlightedStep]}>
-                    <View style={styles.stepIconWrap}>
-                      <StepIcon type={item.icon} />
-                    </View>
-                    <View style={styles.stepContent}>
-                      <Text style={styles.stepInstruction}>{item.instruction}</Text>
-                      {item.distanceMeters > 0 && (
-                        <Text style={styles.stepDistance}>{item.distanceMeters}m</Text>
-                      )}
-                    </View>
-                  </View>
-                )}
-                style={styles.stepsList}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled
-              />
+            <View style={styles.headerCopy}>
+              <Text style={styles.routeLabel}>Walking to</Text>
+              <Text style={styles.routeTitle}>{destination.name}</Text>
             </View>
-          </>
-        ) : (
-          <StateCard title="Route fallback ready" description="A simplified path is shown while live routing is unavailable." />
-        )}
-
-        <View style={styles.actionRow}>
-          <PrimaryButton
-            label={isActiveNav ? "Stop Navigation" : "Start Active Nav"}
-            onPress={toggleActiveNav}
-            variant={isActiveNav ? "secondary" : "primary"}
-            style={styles.actionButton}
-          />
-          {!isActiveNav && (
-            <Pressable
-              style={styles.refreshButton}
-              onPress={() => void directionsQuery.refetch()}
-            >
-              <Navigation2 size={20} color={theme.colors.primary} />
+            <Pressable onPress={handleShare} style={styles.shareButton}>
+              <Share2 size={20} color={theme.colors.primary} />
             </Pressable>
+          </View>
+
+          {directionsQuery.isLoading ? (
+            <StateCard title="Drawing route" description="Calculating the best walking path across campus." loading />
+          ) : directionsQuery.data ? (
+            <>
+              <View style={styles.metricsRow}>
+                <View style={styles.metricCard}>
+                  <Text style={styles.metricValue}>{formatDistance(directionsQuery.data.distanceMeters)}</Text>
+                  <Text style={styles.metricLabel}>Distance</Text>
+                </View>
+                <View style={styles.metricCard}>
+                  <Text style={styles.metricValue}>{directionsQuery.data.durationMinutes} min</Text>
+                  <Text style={styles.metricLabel}>Walk time</Text>
+                </View>
+              </View>
+
+              <View style={styles.stepsContainer}>
+                <Text style={styles.stepsTitle}>Navigation Steps</Text>
+                <FlatList
+                  data={steps}
+                  keyExtractor={(_, index) => index.toString()}
+                  renderItem={({ item, index }) => (
+                    <View style={[styles.stepRow, index === 0 && isActiveNav && styles.highlightedStep]}>
+                      <View style={styles.stepIconWrap}>
+                        <StepIcon type={item.icon} />
+                      </View>
+                      <View style={styles.stepContent}>
+                        <Text style={styles.stepInstruction}>{item.instruction}</Text>
+                        {item.distanceMeters > 0 && (
+                          <Text style={styles.stepDistance}>{item.distanceMeters}m</Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                  style={styles.stepsList}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                />
+              </View>
+            </>
+          ) : (
+            <StateCard title="Route fallback ready" description="A simplified path is shown while live routing is unavailable." />
           )}
+
+          <View style={styles.actionRow}>
+            <PrimaryButton
+              label={isActiveNav ? "Stop Navigation" : "Start Active Nav"}
+              onPress={toggleActiveNav}
+              variant={isActiveNav ? "secondary" : "primary"}
+              style={styles.actionButton}
+            />
+            {!isActiveNav && (
+              <Pressable
+                style={styles.refreshButton}
+                onPress={() => void directionsQuery.refetch()}
+              >
+                <Navigation2 size={20} color={theme.colors.primary} />
+              </Pressable>
+            )}
+          </View>
         </View>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -209,6 +254,56 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  // ── Arrival overlay ────────────────────────────────────────────────────
+  arrivalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  arrivalCard: {
+    width: '100%',
+    borderRadius: 28,
+    backgroundColor: theme.colors.surface,
+    padding: 28,
+    alignItems: 'center',
+    gap: 12,
+    ...theme.shadow,
+  },
+  arrivalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  arrivalTitle: {
+    fontSize: 26,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  arrivalSubtitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.primary,
+    textAlign: 'center',
+  },
+  arrivalDescription: {
+    fontSize: 14,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  arrivalButton: {
+    marginTop: 8,
+    width: '100%',
+  },
+  // ── Regular bottom sheet ───────────────────────────────────────────────
   overlayCard: {
     margin: 18,
     position: 'absolute',

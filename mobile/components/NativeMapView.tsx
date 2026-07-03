@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react";
-import { StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, useEffect, useState } from "react";
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 
 import { categoryColors, theme } from '@/constants/theme';
@@ -25,7 +25,18 @@ interface NativeMapViewProps {
   style?: object;
   showsUserLocation?: boolean;
   followsUserLocation?: boolean;
+  /**
+   * When true (default), animates the polyline drawing from origin to
+   * destination over ~750ms when a new route loads.
+   * Set to false for static/mini-map contexts where animation is unnecessary.
+   */
+  animateRoute?: boolean;
 }
+
+// Animation target duration in ms and minimum starting points to show
+const ROUTE_ANIM_DURATION_MS = 750;
+const ROUTE_ANIM_INTERVAL_MS = 16; // ~60fps
+const ROUTE_ANIM_MIN_START = 2;
 
 const BuildingMarker = memo(({
   marker,
@@ -68,17 +79,92 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
     style,
     showsUserLocation = false,
     followsUserLocation = false,
+    animateRoute = true,
   } = props;
 
-  const routeCoords = useMemo<RouteSegment[]>(() => route, [route]);
   const prevRegion = useRef<StoredMapRegion | null>(null);
   const mapRef = useRef<MapView>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Number of route points currently visible (drives the animated slice)
+  const [visibleCount, setVisibleCount] = useState<number>(route.length);
 
   useImperativeHandle(ref, () => ({
     animateToRegion: (newRegion: StoredMapRegion, duration?: number) => {
       mapRef.current?.animateToRegion(newRegion, duration);
     },
   }));
+
+  // Kick off (or skip) animation whenever the route array identity changes
+  useEffect(() => {
+    const fullCount = route.length;
+
+    if (fullCount < 2) {
+      setVisibleCount(fullCount);
+      return;
+    }
+
+    // Clear any in-progress animation from a previous route
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (!animateRoute) {
+      // Static mode — show the complete route immediately
+      setVisibleCount(fullCount);
+      return;
+    }
+
+    // Check OS reduce-motion preference asynchronously, then start or skip
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (reduceMotion) {
+        setVisibleCount(fullCount);
+        return;
+      }
+
+      // Calculate how many points to add per tick so the total animation
+      // completes in roughly ROUTE_ANIM_DURATION_MS regardless of route length.
+      const totalTicks = ROUTE_ANIM_DURATION_MS / ROUTE_ANIM_INTERVAL_MS;
+      const pointsPerTick = Math.max(1, Math.ceil((fullCount - ROUTE_ANIM_MIN_START) / totalTicks));
+
+      // Start drawing from a small seed so users see motion from the very
+      // first frame rather than nothing.
+      setVisibleCount(ROUTE_ANIM_MIN_START);
+
+      intervalRef.current = setInterval(() => {
+        setVisibleCount((prev) => {
+          const next = prev + pointsPerTick;
+          if (next >= fullCount) {
+            clearInterval(intervalRef.current!);
+            intervalRef.current = null;
+            return fullCount;
+          }
+          return next;
+        });
+      }, ROUTE_ANIM_INTERVAL_MS);
+    });
+
+    return () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    // route reference changes signal a new route; animateRoute is a static prop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, animateRoute]);
+
+  // Slice to the animated window; memoised so Polyline only re-renders on count change
+  const visibleCoords = useMemo<RouteSegment[]>(
+    () => (route.length > 1 ? route.slice(0, visibleCount) : route),
+    [route, visibleCount],
+  );
+
+  const hasRoute = route.length > 1;
+  // Start/end dots should appear once we have enough visible points to draw them
+  const showStartDot = visibleCoords.length >= 1;
+  const showEndDot = visibleCount >= route.length;
 
   const throttledRegionChange = useCallback(
     (r: any) => {
@@ -99,8 +185,6 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
     [onRegionChangeComplete],
   );
 
-  const hasRoute = routeCoords.length > 1;
-
   return (
     <View style={[styles.container, style]}>
       <MapView
@@ -119,9 +203,9 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
           <BuildingMarker key={marker.id} marker={marker} onPress={onMarkerPress} />
         ))}
 
-        {hasRoute ? (
+        {hasRoute && visibleCoords.length > 1 ? (
           <Polyline
-            coordinates={routeCoords}
+            coordinates={visibleCoords}
             strokeColor={theme.colors.primary}
             strokeWidth={5}
             lineCap="round"
@@ -129,9 +213,9 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
           />
         ) : null}
 
-        {hasRoute ? (
+        {hasRoute && showStartDot ? (
           <Circle
-            center={routeCoords[0]}
+            center={route[0]}
             radius={6}
             fillColor={theme.colors.primaryDark}
             strokeColor="#FFFFFF"
@@ -139,9 +223,9 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
           />
         ) : null}
 
-        {hasRoute ? (
+        {hasRoute && showEndDot ? (
           <Circle
-            center={routeCoords[routeCoords.length - 1]}
+            center={route[route.length - 1]}
             radius={6}
             fillColor={theme.colors.accent}
             strokeColor="#FFFFFF"

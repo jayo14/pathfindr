@@ -150,6 +150,7 @@ export default function AIAssistantScreen() {
                 }}
                 route={item.routeData.points}
                 style={styles.miniMap}
+                animateRoute={false}
               />
               <View style={styles.mapOverlay}>
                 <Text style={styles.mapStats}>
