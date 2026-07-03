@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "rork-app",
+    "scheme": ["rork-app", "pathfindr"],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -25,7 +25,8 @@
       "package": "app.rork.n9ouzx13yea3awmll9tjk",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -45,6 +46,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "PathFindr needs your location to show you on the campus map and calculate walking routes.",
           "locationWhenInUsePermission": "PathFindr needs your location to show you on the campus map and calculate walking routes."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PathFindr needs camera access to scan QR codes on campus signage and open building information instantly."
         }
       ]
     ],

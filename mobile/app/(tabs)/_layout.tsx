@@ -1,10 +1,16 @@
 import { Tabs } from 'expo-router';
-import { Map, Calendar, Search, Settings, Sparkles } from 'lucide-react-native';
-import { StyleSheet, Pressable, View } from 'react-native';
+import { Home, Map, MessageCircle, Navigation } from 'lucide-react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
+  const TAB_BAR_BASE = 56;
+  const tabBarHeight = TAB_BAR_BASE + insets.bottom;
+
   return (
     <Tabs
       screenOptions={{
@@ -14,8 +20,9 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
-          height: 72,
-          paddingBottom: 8,
+          borderTopWidth: 1,
+          height: tabBarHeight,
+          paddingBottom: insets.bottom + 4,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
@@ -24,20 +31,16 @@ export default function TabLayout() {
         },
       }}
     >
+      {/* Tab 1 — Home */}
       <Tabs.Screen
-        name="events"
+        name="index"
         options={{
-          title: 'Events',
-          tabBarIcon: ({ color, size }) => <Calendar size={size} color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="lost-found"
-        options={{
-          title: 'Lost & Found',
-          tabBarIcon: ({ color, size }) => <Search size={size} color={color} />,
-        }}
-      />
+
+      {/* Tab 2 — Map (centre FAB) */}
       <Tabs.Screen
         name="map"
         options={{
@@ -54,27 +57,36 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
-        }}
-      />
+
+      {/* Tab 3 — Chat */}
       <Tabs.Screen
         name="ai-assistant"
         options={{
-          title: 'Assistant',
-          tabBarIcon: ({ color, size }) => <Sparkles size={size} color={color} />,
+          title: 'Chat',
+          tabBarIcon: ({ color, size }) => <MessageCircle size={size} color={color} />,
         }}
       />
+
+      {/* Tab 4 — Directions */}
+      <Tabs.Screen
+        name="directions"
+        options={{
+          title: 'Directions',
+          tabBarIcon: ({ color, size }) => <Navigation size={size} color={color} />,
+        }}
+      />
+
+      {/* Hidden tabs — still navigable by URL, just not shown in the bar */}
+      <Tabs.Screen name="events"     options={{ href: null }} />
+      <Tabs.Screen name="lost-found" options={{ href: null }} />
+      <Tabs.Screen name="settings"   options={{ href: null }} />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
   fabContainer: {
-    top: -30,
+    top: -28,
     justifyContent: 'center',
     alignItems: 'center',
   },
