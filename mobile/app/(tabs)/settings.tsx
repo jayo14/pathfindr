@@ -4,19 +4,34 @@ import {
   DatabaseZap,
   Download,
   GraduationCap,
+  KeyRound,
   LogOut,
   MapPinned,
+  QrCode,
   RefreshCcw,
   ShieldCheck,
   User,
   Wifi,
   Info,
 } from 'lucide-react-native';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 
 import { theme } from '@/constants/theme';
 import { useCampusData } from '@/hooks/useCampusData';
+import { changePassword, getMe } from '@/services/auth-service';
 import { useAppStore } from '@/store/useAppStore';
 
 // ── Reusable row component ───────────────────────────────────────────────
@@ -77,8 +92,51 @@ export default function SettingsScreen() {
   const lastMapRegion              = useAppStore(s => s.lastMapRegion);
   const userEmail                  = useAppStore(s => s.userEmail);
   const isGuest                    = useAppStore(s => s.isGuest);
+  const isAuthenticated            = useAppStore(s => s.isAuthenticated);
   const setHasCompletedOnboarding  = useAppStore(s => s.setHasCompletedOnboarding);
   const logout                     = useAppStore(s => s.logout);
+
+  // Fetch live profile from /auth/me/ when signed in
+  const { data: meData } = useQuery({
+    queryKey: ['me'],
+    queryFn: getMe,
+    enabled: isAuthenticated && !isGuest,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const displayName =
+    meData?.profile?.fullName ||
+    meData?.profile?.full_name ||
+    meData?.username ||
+    (isGuest ? 'Guest User' : userEmail?.split('@')[0] ?? 'Student');
+
+  const displayEmail = meData?.email ?? (isGuest ? 'Not signed in' : userEmail ?? '');
+
+  // Change-password modal state
+  const [pwModalVisible, setPwModalVisible] = useState(false);
+  const [oldPassword, setOldPassword]       = useState('');
+  const [newPassword, setNewPassword]       = useState('');
+  const [pwLoading, setPwLoading]           = useState(false);
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || newPassword.length < 6) {
+      Alert.alert('Validation', 'New password must be at least 6 characters.');
+      return;
+    }
+    setPwLoading(true);
+    try {
+      await changePassword(oldPassword, newPassword);
+      Alert.alert('Success', 'Password updated successfully.');
+      setPwModalVisible(false);
+      setOldPassword('');
+      setNewPassword('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to change password.';
+      Alert.alert('Error', msg);
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -113,12 +171,8 @@ export default function SettingsScreen() {
             <User size={28} color="#FFF" />
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>
-              {isGuest ? 'Guest User' : (userEmail?.split('@')[0] ?? 'Student')}
-            </Text>
-            <Text style={styles.profileEmail}>
-              {isGuest ? 'Not signed in' : (userEmail ?? '')}
-            </Text>
+            <Text style={styles.profileName}>{displayName}</Text>
+            <Text style={styles.profileEmail}>{displayEmail}</Text>
           </View>
           <View style={[styles.profileBadge, isGuest ? styles.profileBadgeGuest : styles.profileBadgeAuth]}>
             <Text style={[styles.profileBadgeText, isGuest ? { color: '#F27C42' } : { color: '#0D8C60' }]}>
@@ -204,6 +258,15 @@ export default function SettingsScreen() {
               router.replace('/onboarding');
             }}
           />
+          {isAuthenticated && !isGuest && (
+            <SettingsRow
+              icon={KeyRound}
+              iconColor="#2078B4"
+              iconBg="#EBF4FF"
+              label="Change Password"
+              onPress={() => setPwModalVisible(true)}
+            />
+          )}
           <SettingsRow
             icon={LogOut}
             iconColor={theme.colors.danger}
@@ -217,6 +280,50 @@ export default function SettingsScreen() {
 
         <Text style={styles.version}>PathFindr v1.0.0 · LASUSTECH</Text>
       </ScrollView>
+
+      {/* ── Change Password Modal ── */}
+      <Modal visible={pwModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.modalContainer} edges={['top']}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Change Password</Text>
+            <Pressable onPress={() => { setPwModalVisible(false); setOldPassword(''); setNewPassword(''); }}>
+              <Text style={styles.modalClose}>Cancel</Text>
+            </Pressable>
+          </View>
+          <View style={styles.modalBody}>
+            <Text style={styles.inputLabel}>Current password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              placeholder="Enter current password"
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <Text style={[styles.inputLabel, { marginTop: 16 }]}>New password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="At least 6 characters"
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+            <Pressable
+              style={[styles.saveBtn, pwLoading && { opacity: 0.6 }]}
+              onPress={() => void handleChangePassword()}
+              disabled={pwLoading}
+            >
+              {pwLoading
+                ? <ActivityIndicator color="#FFF" />
+                : <Text style={styles.saveBtnText}>Update Password</Text>
+              }
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }

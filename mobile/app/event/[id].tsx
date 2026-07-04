@@ -22,7 +22,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { StateCard } from '@/components/StateCard';
 import { theme } from '@/constants/theme';
-import { useEvents } from '@/hooks/useCampusData';
+import { useEvent } from '@/hooks/useCampusData';
 
 const CATEGORY_COLOR: Record<string, string> = {
   academic: '#0D8C60',
@@ -40,10 +40,8 @@ const CATEGORY_BG: Record<string, string> = {
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { events, isLoading } = useEvents();
+  const { data: event, isLoading } = useEvent(id);
   const insets = useSafeAreaInsets();
-
-  const event = events.find(e => e.id === id);
 
   const color = event ? (CATEGORY_COLOR[event.category] ?? theme.colors.primary) : theme.colors.primary;
   const bg    = event ? (CATEGORY_BG[event.category]    ?? theme.colors.surfaceAlt) : theme.colors.surfaceAlt;
