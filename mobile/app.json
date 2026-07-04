@@ -1,11 +1,14 @@
 {
   "expo": {
     "name": "PathFindr",
-    "slug": "n9ouzx13yea3awmll9tjk",
+    "slug": "pathfindr",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": ["rork-app", "pathfindr"],
+    "scheme": [
+      "rork-app",
+      "pathfindr"
+    ],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -26,7 +29,8 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -63,8 +67,9 @@
         "origin": "https://rork.com/"
       },
       "eas": {
-        "projectId": "8583b3ca-1b06-4a0b-b554-be0eabbac8de"
+        "projectId": "e654bc2d-aa98-4405-996a-8392bb473b0c"
       }
-    }
+    },
+    "owner": "codegallantx"
   }
 }
