@@ -10,6 +10,10 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils.decorators import method_decorator
 from openai import OpenAI
+try:
+    from sarvamai import SarvamAI as _SarvamAI
+except ImportError:
+    _SarvamAI = None
 
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -349,13 +353,19 @@ class WaitlistCreateView(generics.CreateAPIView):
 # AI Chat
 # ══════════════════════════════════════════════════════════════════════════
 
-AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
-AI_API_KEY  = os.getenv('AI_API_KEY')
-AI_BASE_URL = os.getenv('AI_BASE_URL', 'https://api.openai.com/v1')
-AI_MODEL    = os.getenv('AI_MODEL', 'gpt-4o-mini')
+AI_PROVIDER      = os.getenv('AI_PROVIDER', 'openai')          # 'openai' | 'sarvam'
+AI_API_KEY       = os.getenv('AI_API_KEY')                        # OpenAI key
+AI_BASE_URL      = os.getenv('AI_BASE_URL', 'https://api.openai.com/v1')
+AI_MODEL         = os.getenv('AI_MODEL', 'gpt-4o-mini')
+AI_SARVAM_KEY    = os.getenv('AI_SUBSCRIPTION_KEY') or os.getenv('AI_API_KEY')
+AI_SARVAM_MODEL  = os.getenv('AI_MODEL', 'sarvam-105b')
 
-_ai_client = None
-if AI_API_KEY:
+_ai_client  = None   # OpenAI-compatible client
+_sarvam_client = None  # SarvamAI client
+
+if AI_PROVIDER == 'sarvam' and AI_SARVAM_KEY and _SarvamAI:
+    _sarvam_client = _SarvamAI(api_subscription_key=AI_SARVAM_KEY)
+elif AI_API_KEY:
     _ai_client = OpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
 
 _ctx_cache: dict = {'text': None, 'ts': 0.0}
@@ -453,7 +463,7 @@ class AIChatView(APIView):
             )
             augmented_msg = f"{user_message}\n[System hint: {hints}]"
 
-        if _ai_client:
+        if _sarvam_client or _ai_client:
             system_prompt = build_building_context(follow_up_context)
             messages = [{'role': 'system', 'content': system_prompt}]
             for msg in history[-6:]:
@@ -461,13 +471,21 @@ class AIChatView(APIView):
             messages.append({'role': 'user', 'content': augmented_msg})
 
             try:
-                completion = _ai_client.chat.completions.create(
-                    model=AI_MODEL,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=400,
-                    response_format={'type': 'json_object'},
-                )
+                if _sarvam_client:
+                    # Sarvam SDK: client.chat.completions(model=..., messages=[...])
+                    completion = _sarvam_client.chat.completions(
+                        model=AI_SARVAM_MODEL,
+                        messages=messages,
+                    )
+                else:
+                    # OpenAI-compatible SDK
+                    completion = _ai_client.chat.completions.create(
+                        model=AI_MODEL,
+                        messages=messages,
+                        temperature=0.3,
+                        max_tokens=400,
+                        response_format={'type': 'json_object'},
+                    )
                 parsed      = json.loads(completion.choices[0].message.content)
                 intent      = parsed.get('intent', 'general')
                 building_id = parsed.get('building_id')
