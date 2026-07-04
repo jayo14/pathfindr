@@ -36,6 +36,11 @@ yarn-error.*
 # Backend env (use .env.example as the committed template)
 backend/.env
 
+# Mobile env files (use .env.example as the committed template)
+mobile/.env
+mobile/.env.*
+!mobile/.env.example
+
 # typescript
 *.tsbuildinfo
 
