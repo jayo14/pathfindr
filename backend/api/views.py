@@ -1,27 +1,48 @@
-from .routing import compute_route
-from rest_framework.decorators import api_view, permission_classes as pc
-from rest_framework.permissions import AllowAny
-from django_ratelimit.decorators import ratelimit
-from django.utils.decorators import method_decorator
+import os
+import re
+import json
+import time as _time
+
+from django.conf import settings
+from django.contrib.auth import authenticate
+from django.contrib.auth.forms import PasswordResetForm
+from django.contrib.auth.models import User
 from django.db.models import Q
+from django.utils.decorators import method_decorator
+from openai import OpenAI
+
 from rest_framework import generics, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
+from django_ratelimit.decorators import ratelimit
+
 from .models import Profile, Building, Event, LostItem, Survey, Waitlist
+from .routing import compute_route
 from .serializers import (
-    RegisterSerializer, UserSerializer, ProfileSerializer,
-    BuildingSerializer, EventSerializer, LostItemSerializer, SurveySerializer,
-    WaitlistSerializer
+    BuildingSerializer,
+    ChangePasswordSerializer,
+    EventSerializer,
+    LostItemSerializer,
+    ProfileSerializer,
+    RegisterSerializer,
+    SurveySerializer,
+    UserSerializer,
+    WaitlistSerializer,
 )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Auth
+# ══════════════════════════════════════════════════════════════════════════
 
 @method_decorator(ratelimit(key='ip', rate='5/m', method='POST', block=True), name='dispatch')
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
     serializer_class = RegisterSerializer
+
 
 @method_decorator(ratelimit(key='ip', rate='10/m', method='POST', block=True), name='dispatch')
 class LoginView(APIView):
@@ -35,83 +56,43 @@ class LoginView(APIView):
             refresh = RefreshToken.for_user(user)
             return Response({
                 'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'user': UserSerializer(user).data
+                'access':  str(refresh.access_token),
+                'user':    UserSerializer(user).data,
             })
-        return Response({'error': 'Invalid Credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class MeView(APIView):
+    """GET /auth/me/ — returns the authenticated user + their profile."""
+
+    def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+
+class ChangePasswordView(APIView):
+    """POST /auth/change-password/"""
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        if not user.check_password(serializer.validated_data['old_password']):
+            return Response({'error': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        return Response({'message': 'Password updated successfully.'})
+
 
 class ProfileView(generics.RetrieveUpdateAPIView):
+    """GET / PATCH  /profile/"""
     serializer_class = ProfileSerializer
 
     def get_object(self):
-        return self.request.user.profile
+        profile, _ = Profile.objects.get_or_create(user=self.request.user)
+        return profile
 
-@method_decorator(ratelimit(key="ip", rate="20/m", method="GET", block=True), name="dispatch")
-class BuildingListView(generics.ListAPIView):
-    serializer_class = BuildingSerializer
-    permission_classes = (permissions.AllowAny,)
-
-    def get_queryset(self):
-        queryset = Building.objects.all().order_by('name')
-        q = self.request.query_params.get('q', '').strip()
-        category = self.request.query_params.get('category', '').strip()
-
-        if q:
-            queryset = queryset.filter(
-                Q(name__icontains=q) |
-                Q(code__icontains=q) |
-                Q(description__icontains=q) |
-                Q(tags__icontains=q)
-            )
-        if category and category != 'all':
-            queryset = queryset.filter(category=category)
-
-        return queryset
-
-@method_decorator(ratelimit(key="ip", rate="20/m", method="GET", block=True), name="dispatch")
-class EventListView(generics.ListAPIView):
-    serializer_class = EventSerializer
-    permission_classes = (permissions.AllowAny,)
-
-    def get_queryset(self):
-        queryset = Event.objects.all().order_by('title')
-        q = self.request.query_params.get('q', '').strip()
-        category = self.request.query_params.get('category', '').strip()
-
-        if q:
-            queryset = queryset.filter(
-                Q(title__icontains=q) |
-                Q(description__icontains=q)
-            )
-        if category and category != 'all':
-            queryset = queryset.filter(category=category)
-
-        return queryset
-
-@method_decorator(ratelimit(key="ip", rate="10/m", method="POST", block=True), name="dispatch")
-@method_decorator(ratelimit(key="ip", rate="30/m", method="GET", block=True), name="dispatch")
-class LostItemViewSet(viewsets.ModelViewSet):
-    queryset = LostItem.objects.all()
-    serializer_class = LostItemSerializer
-
-    def get_queryset(self):
-        return LostItem.objects.all().order_by('-reported_at')
-
-class SurveyCreateView(generics.CreateAPIView):
-    queryset = Survey.objects.all()
-    serializer_class = SurveySerializer
-
-
-class BuildingDetailView(generics.RetrieveAPIView):
-    queryset = Building.objects.all()
-    serializer_class = BuildingSerializer
-    permission_classes = (permissions.AllowAny,)
-class WaitlistCreateView(generics.CreateAPIView):
-    queryset = Waitlist.objects.all()
-    serializer_class = WaitlistSerializer
-    permission_classes = (permissions.AllowAny,)
-from django.contrib.auth.forms import PasswordResetForm
-from django.conf import settings
 
 class PasswordResetRequestView(APIView):
     permission_classes = (permissions.AllowAny,)
@@ -124,13 +105,217 @@ class PasswordResetRequestView(APIView):
                 request=request,
                 use_https=not settings.DEBUG,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                email_template_name='registration/password_reset_email.html'
+                email_template_name='registration/password_reset_email.html',
             )
-            return Response({'message': 'Password reset email sent if account exists.'}, status=status.HTTP_200_OK)
+            return Response({'message': 'If that email exists you will receive a reset link.'})
         return Response(form.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# Buildings
+# ══════════════════════════════════════════════════════════════════════════
+
+@method_decorator(ratelimit(key='ip', rate='30/m', method='GET', block=True), name='dispatch')
+class BuildingListView(generics.ListAPIView):
+    """
+    GET /buildings/
+    Query params: q (text search), category, tags (comma-separated)
+    """
+    serializer_class = BuildingSerializer
+    permission_classes = (permissions.AllowAny,)
+
+    def get_queryset(self):
+        qs = Building.objects.all().order_by('name')
+        q        = self.request.query_params.get('q', '').strip()
+        category = self.request.query_params.get('category', '').strip()
+        tags_raw = self.request.query_params.get('tags', '').strip()
+
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)        |
+                Q(code__icontains=q)        |
+                Q(description__icontains=q) |
+                Q(tags__icontains=q)
+            )
+        if category and category != 'all':
+            qs = qs.filter(category=category)
+        if tags_raw:
+            for tag in tags_raw.split(','):
+                tag = tag.strip()
+                if tag:
+                    qs = qs.filter(tags__icontains=tag)
+        return qs
+
+
+class BuildingDetailView(generics.RetrieveAPIView):
+    """GET /buildings/<pk>/"""
+    queryset = Building.objects.all()
+    serializer_class = BuildingSerializer
+    permission_classes = (permissions.AllowAny,)
+
+
+class BuildingSearchView(generics.ListAPIView):
+    """
+    GET /buildings/search/?q=...
+    Convenience alias — identical logic to BuildingListView but always
+    requires `q` and never paginates (returns up to 20 results).
+    """
+    serializer_class = BuildingSerializer
+    permission_classes = (permissions.AllowAny,)
+    pagination_class = None  # override global paginator for instant search
+
+    def get_queryset(self):
+        q        = self.request.query_params.get('q', '').strip()
+        category = self.request.query_params.get('category', '').strip()
+
+        qs = Building.objects.all().order_by('name')
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q) |
+                Q(code__icontains=q) |
+                Q(description__icontains=q) |
+                Q(tags__icontains=q)
+            )
+        if category and category != 'all':
+            qs = qs.filter(category=category)
+        return qs[:20]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Events
+# ══════════════════════════════════════════════════════════════════════════
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    """Read-only for everyone; write access only for staff/admin."""
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user and request.user.is_staff
+
+
+class EventViewSet(viewsets.ModelViewSet):
+    """
+    GET    /events/              — list (public, supports ?q=&category=)
+    POST   /events/              — create (admin only)
+    GET    /events/<id>/         — detail (public)
+    PATCH  /events/<id>/         — partial update (admin only)
+    PUT    /events/<id>/         — full update (admin only)
+    DELETE /events/<id>/         — delete (admin only)
+    """
+    serializer_class = EventSerializer
+    permission_classes = (IsAdminOrReadOnly,)
+
+    def get_queryset(self):
+        qs       = Event.objects.select_related('building').order_by('date_label', 'start_time')
+        q        = self.request.query_params.get('q', '').strip()
+        category = self.request.query_params.get('category', '').strip()
+
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q) |
+                Q(description__icontains=q) |
+                Q(location_name__icontains=q)
+            )
+        if category and category != 'all':
+            qs = qs.filter(category=category)
+        return qs
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Lost & Found
+# ══════════════════════════════════════════════════════════════════════════
+
+class LostItemPermission(permissions.BasePermission):
+    """
+    • Anyone can GET list / retrieve.
+    • Anyone (incl. unauthenticated) can POST (guest reports).
+    • PATCH / DELETE only by the item owner or staff.
+    """
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS or request.method == 'POST':
+            return True
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        # Staff can always modify
+        if request.user and request.user.is_staff:
+            return True
+        # Owner can modify their own items
+        return obj.user is not None and obj.user == request.user
+
+
+@method_decorator(ratelimit(key='ip', rate='30/m', method='GET',  block=True), name='dispatch')
+@method_decorator(ratelimit(key='ip', rate='10/m', method='POST', block=True), name='dispatch')
+class LostItemViewSet(viewsets.ModelViewSet):
+    """
+    GET    /lost-items/          — list all (public)
+    POST   /lost-items/          — create (public, guest-friendly)
+    GET    /lost-items/<id>/     — detail (public)
+    PATCH  /lost-items/<id>/     — update status/contact (owner or staff)
+    PUT    /lost-items/<id>/     — full update (owner or staff)
+    DELETE /lost-items/<id>/     — delete (owner or staff)
+    """
+    serializer_class = LostItemSerializer
+    permission_classes = (LostItemPermission,)
+
+    def get_queryset(self):
+        qs     = LostItem.objects.select_related('building').order_by('-reported_at')
+        status = self.request.query_params.get('status', '').strip()
+        q      = self.request.query_params.get('q', '').strip()
+
+        if status in ('lost', 'found'):
+            qs = qs.filter(status=status)
+        if q:
+            qs = qs.filter(
+                Q(title__icontains=q) |
+                Q(location_name__icontains=q) |
+                Q(description__icontains=q)
+            )
+        return qs
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Campus aggregate
+# ══════════════════════════════════════════════════════════════════════════
+
+class CampusView(APIView):
+    """
+    GET /campus/
+    Returns {buildings, events, lostItems, updatedAt} in one shot.
+    Matches the CachedCampusData shape the mobile app expects.
+    """
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        buildings  = Building.objects.all().order_by('name')
+        events     = Event.objects.select_related('building').order_by('date_label', 'start_time')
+        lost_items = LostItem.objects.select_related('building').order_by('-reported_at')
+
+        return Response({
+            'buildings':  BuildingSerializer(buildings,  many=True, context={'request': request}).data,
+            'events':     EventSerializer(events,        many=True, context={'request': request}).data,
+            'lostItems':  LostItemSerializer(lost_items, many=True, context={'request': request}).data,
+            'updatedAt':  _time.strftime('%Y-%m-%dT%H:%M:%SZ', _time.gmtime()),
+        })
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Route
+# ══════════════════════════════════════════════════════════════════════════
+
 class RouteView(APIView):
-    permission_classes = (AllowAny,)
+    """
+    GET /route/?orig_lat=&orig_lon=&dest_lat=&dest_lon=
+    """
+    permission_classes = (permissions.AllowAny,)
+
     def get(self, request):
         try:
             orig_lat = float(request.query_params['orig_lat'])
@@ -138,140 +323,114 @@ class RouteView(APIView):
             dest_lat = float(request.query_params['dest_lat'])
             dest_lon = float(request.query_params['dest_lon'])
         except (KeyError, ValueError):
-            return Response({"error": "Required: orig_lat, orig_lon, dest_lat, dest_lon"}, status=400)
+            return Response(
+                {'error': 'Required query params: orig_lat, orig_lon, dest_lat, dest_lon'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(compute_route(orig_lat, orig_lon, dest_lat, dest_lon))
 
-import os
-import re
-import json
-import time as _time
-from openai import OpenAI
+
+# ══════════════════════════════════════════════════════════════════════════
+# Survey / Waitlist
+# ══════════════════════════════════════════════════════════════════════════
+
+class SurveyCreateView(generics.CreateAPIView):
+    queryset = Survey.objects.all()
+    serializer_class = SurveySerializer
+
+
+class WaitlistCreateView(generics.CreateAPIView):
+    queryset = Waitlist.objects.all()
+    serializer_class = WaitlistSerializer
+    permission_classes = (permissions.AllowAny,)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# AI Chat
+# ══════════════════════════════════════════════════════════════════════════
 
 AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
-AI_API_KEY = os.getenv('AI_API_KEY')
+AI_API_KEY  = os.getenv('AI_API_KEY')
 AI_BASE_URL = os.getenv('AI_BASE_URL', 'https://api.openai.com/v1')
-AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
+AI_MODEL    = os.getenv('AI_MODEL', 'gpt-4o-mini')
 
-client = None
+_ai_client = None
 if AI_API_KEY:
-    client = OpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
+    _ai_client = OpenAI(api_key=AI_API_KEY, base_url=AI_BASE_URL)
 
-# ---------------------------------------------------------------------------
-# Dynamic building context — rebuilt from the DB, cached for 60 s.
-# ---------------------------------------------------------------------------
-_ctx_cache: dict = {"text": None, "ts": 0.0}
-_CTX_TTL = 60  # seconds
+_ctx_cache: dict = {'text': None, 'ts': 0.0}
+_CTX_TTL = 60
 
 
 def _build_building_lines() -> str:
-    from .models import Building as BuildingModel
     from .routing import nearest_node
-
     lines = []
-    for b in BuildingModel.objects.only("name", "code", "category", "description", "latitude", "longitude"):
+    for b in Building.objects.only('name', 'code', 'category', 'description', 'latitude', 'longitude'):
         slug = nearest_node(b.latitude, b.longitude)
         desc = b.description[:80].rstrip()
-        lines.append(f"- {slug} (code:{b.code}): {b.name} ({b.category}) - {desc}")
-    return "\n".join(lines)
+        lines.append(f'- {slug} (code:{b.code}): {b.name} ({b.category}) - {desc}')
+    return '\n'.join(lines)
 
 
-def build_building_context(follow_up_context: dict | None = None) -> str:
-    """
-    Return the enriched system prompt string.
-
-    follow_up_context — optional dict with keys `building_id` and
-    `building_name` echoed back by the client from a prior turn.  When
-    present it is injected into the prompt so the LLM can resolve
-    pronouns like "near there" or "from there" without the user repeating
-    the building name.
-    """
+def build_building_context(follow_up_context=None) -> str:
     now = _time.monotonic()
-    if _ctx_cache["text"] is None or (now - _ctx_cache["ts"]) > _CTX_TTL:
+    if _ctx_cache['text'] is None or (now - _ctx_cache['ts']) > _CTX_TTL:
         try:
             building_lines = _build_building_lines()
         except Exception:
-            building_lines = _ctx_cache.get("text") or "- (building data temporarily unavailable)"
-        _ctx_cache["text"] = building_lines
-        _ctx_cache["ts"] = now
+            building_lines = _ctx_cache.get('text') or '- (building data temporarily unavailable)'
+        _ctx_cache['text'] = building_lines
+        _ctx_cache['ts']   = now
 
-    building_lines = _ctx_cache["text"]
-
-    # Compose context-awareness section
-    context_section = ""
-    if follow_up_context and follow_up_context.get("building_id"):
-        b_name = follow_up_context.get("building_name", follow_up_context["building_id"])
+    context_section = ''
+    if follow_up_context and follow_up_context.get('building_id'):
+        b_name = follow_up_context.get('building_name', follow_up_context['building_id'])
         context_section = (
             f"\n\nCONVERSATION CONTEXT: The user was most recently talking about "
             f"'{b_name}' (id: {follow_up_context['building_id']}). "
-            "Resolve any relative references such as 'there', 'that place', 'from there', "
-            "'near there', or 'what about that one' against this building unless the new "
-            "message clearly refers to a different location."
+            "Resolve relative references such as 'there', 'near there', 'from there' against this building."
         )
 
     return (
         "PathFindr is a campus navigation app for LASUSTECH "
         "(Lagos State University of Science and Technology).\n"
-        "Campus buildings (format: slug (code:CODE): Name (category) - description):\n"
-        + building_lines
-        + context_section
-        + "\n\n"
+        "Campus buildings:\n" + _ctx_cache['text'] + context_section + "\n\n"
         "You are a helpful, concise campus navigation assistant.\n"
         "Rules:\n"
-        "1. When a user wants directions to a building, return:\n"
-        '   {"intent":"navigate","building_id":"<slug>","response":"<friendly 1-sentence message>",'
+        "1. Navigate intent → return JSON: "
+        '{"intent":"navigate","building_id":"<slug>","response":"<message>",'
         '"follow_up_context":{"building_id":"<slug>","building_name":"<Name>"}}\n'
-        "2. When asked about a building (info / what is / opening hours / facilities), return:\n"
-        '   {"intent":"info","building_id":"<slug>","response":"<description>",'
+        "2. Info intent → return JSON: "
+        '{"intent":"info","building_id":"<slug>","response":"<description>",'
         '"follow_up_context":{"building_id":"<slug>","building_name":"<Name>"}}\n'
-        "3. For general questions that do not involve a specific building, return:\n"
-        '   {"intent":"general","response":"<answer>"}\n'
-        "4. If the message mentions a building by its CODE (e.g. ICT, ENG, LIB), match it to "
-        "the slug that has code:<CODE> in the building list above.\n"
-        "5. The `follow_up_context` field MUST be included whenever intent is navigate or info, "
-        "so the next turn can resolve relative references.\n"
-        "Always respond in valid JSON only. No markdown, no extra text outside the JSON object."
+        "3. General → return JSON: "
+        '{"intent":"general","response":"<answer>"}\n'
+        "Always respond in valid JSON only."
     )
 
 
-# ---------------------------------------------------------------------------
-# Course-code resolver — runs before the LLM call, zero extra latency.
-# ---------------------------------------------------------------------------
-_COURSE_CODE_RE = re.compile(
-    r'\b([A-Z]{2,4})\s*(\d{3})\b',
-    re.IGNORECASE,
-)
+_COURSE_CODE_RE = re.compile(r'\b([A-Z]{2,4})\s*(\d{3})\b', re.IGNORECASE)
 
 
-def resolve_course_codes(text: str) -> list[dict]:
-    """
-    Scan `text` for course-code patterns (e.g. 'CSC 302', 'CSC302').
-    Returns a list of dicts: [{course_code, building_id, building_name, building_code}]
-    for each match that has a CourseBuilding row.
-    """
+def resolve_course_codes(text: str) -> list:
     from .models import CourseBuilding
-
-    results = []
-    seen = set()
+    from .routing import nearest_node
+    results, seen = [], set()
     for m in _COURSE_CODE_RE.finditer(text):
         raw = f"{m.group(1).upper()} {m.group(2)}"
         if raw in seen:
             continue
         seen.add(raw)
         try:
-            cb = (
-                CourseBuilding.objects
-                .select_related("building")
-                .get(course_code=raw)
-            )
-            from .routing import nearest_node
+            cb   = CourseBuilding.objects.select_related('building').get(course_code=raw)
             slug = nearest_node(cb.building.latitude, cb.building.longitude)
             results.append({
-                "course_code": raw,
-                "building_id": slug,
-                "building_name": cb.building.name,
-                "building_code": cb.building.code,
+                'course_code':   raw,
+                'building_id':   slug,
+                'building_name': cb.building.name,
+                'building_code': cb.building.code,
             })
-        except CourseBuilding.DoesNotExist:
+        except Exception:
             pass
     return results
 
@@ -281,58 +440,42 @@ class AIChatView(APIView):
     permission_classes = (permissions.AllowAny,)
 
     def post(self, request):
-        user_message = request.data.get('message', '')
-        history = request.data.get('messages', [])
-        # Optional: client echoes back the follow_up_context from the last assistant turn
+        user_message     = request.data.get('message', '')
+        history          = request.data.get('messages', [])
         follow_up_context = request.data.get('follow_up_context') or None
 
-        # ── Pre-processing: resolve any course codes in the user message ──────
-        course_hints = resolve_course_codes(user_message)
-        augmented_message = user_message
+        course_hints    = resolve_course_codes(user_message)
+        augmented_msg   = user_message
         if course_hints:
-            hint_parts = [
-                f"{h['course_code']} is taught at {h['building_name']} (id: {h['building_id']})"
+            hints = '; '.join(
+                f"{h['course_code']} is at {h['building_name']} (id:{h['building_id']})"
                 for h in course_hints
-            ]
-            augmented_message = (
-                user_message
-                + "\n[System hint: "
-                + "; ".join(hint_parts)
-                + "]"
             )
+            augmented_msg = f"{user_message}\n[System hint: {hints}]"
 
-        # ── LLM path ──────────────────────────────────────────────────────────
-        if client:
+        if _ai_client:
             system_prompt = build_building_context(follow_up_context)
-            messages = [{"role": "system", "content": system_prompt}]
+            messages = [{'role': 'system', 'content': system_prompt}]
             for msg in history[-6:]:
-                messages.append({"role": msg['role'], "content": msg['content']})
-            messages.append({"role": "user", "content": augmented_message})
+                messages.append({'role': msg['role'], 'content': msg['content']})
+            messages.append({'role': 'user', 'content': augmented_msg})
 
             try:
-                completion = client.chat.completions.create(
+                completion = _ai_client.chat.completions.create(
                     model=AI_MODEL,
                     messages=messages,
                     temperature=0.3,
                     max_tokens=400,
-                    response_format={"type": "json_object"},
+                    response_format={'type': 'json_object'},
                 )
-                raw = completion.choices[0].message.content
-                parsed = json.loads(raw)
-
-                intent = parsed.get('intent', 'general')
-                response_content = parsed.get('response', '')
+                parsed      = json.loads(completion.choices[0].message.content)
+                intent      = parsed.get('intent', 'general')
                 building_id = parsed.get('building_id')
-                new_follow_up = parsed.get('follow_up_context')  # may be None for general
+                new_ctx     = parsed.get('follow_up_context')
 
-                # If the LLM didn't populate follow_up_context but we resolved a
-                # course code, synthesise it so the client always gets a context back.
-                if not new_follow_up and course_hints:
+                if not new_ctx and course_hints:
                     h = course_hints[0]
-                    new_follow_up = {
-                        "building_id": h["building_id"],
-                        "building_name": h["building_name"],
-                    }
+                    new_ctx = {'building_id': h['building_id'], 'building_name': h['building_name']}
 
                 route_data = None
                 if intent == 'navigate' and building_id:
@@ -342,100 +485,78 @@ class AIChatView(APIView):
                         route_data = compute_route(6.4666, 3.5963, dest[0], dest[1])
 
                 return Response({
-                    "role": "assistant",
-                    "content": response_content,
-                    "buildingId": building_id,
-                    "routeData": route_data,
-                    "intent": intent,
-                    "followUpContext": new_follow_up,
+                    'role':            'assistant',
+                    'content':         parsed.get('response', ''),
+                    'buildingId':      building_id,
+                    'routeData':       route_data,
+                    'intent':          intent,
+                    'followUpContext': new_ctx,
                 })
             except Exception:
-                # Fall through to keyword matching if LLM fails
-                pass
+                pass  # fall through to keyword matching
 
-        # ── Keyword-matching fallback (no API key or LLM error) ───────────────
-        user_message_lower = user_message.lower()
+        # ── Keyword fallback ──────────────────────────────────────────────
+        lower = user_message.lower()
 
-        # If we resolved a course code, treat it as a navigate intent directly
         if course_hints:
             h = course_hints[0]
             from .routing import CAMPUS_NODES
-            dest = CAMPUS_NODES.get(h["building_id"])
+            dest  = CAMPUS_NODES.get(h['building_id'])
             route = compute_route(6.4666, 3.5963, dest[0], dest[1]) if dest else None
             return Response({
-                'role': 'assistant',
-                'content': (
-                    f"{h['course_code']} is in {h['building_name']}. "
-                    f"{'Head there now — the route is ready.' if route else 'I could not compute a live route right now.'}"
-                ),
-                'buildingId': h['building_id'],
-                'routeData': route,
-                'intent': 'navigate',
-                'followUpContext': {
-                    'building_id': h['building_id'],
-                    'building_name': h['building_name'],
-                },
+                'role':            'assistant',
+                'content':         f"{h['course_code']} is taught at {h['building_name']}. Route ready.",
+                'buildingId':      h['building_id'],
+                'routeData':       route,
+                'intent':          'navigate',
+                'followUpContext': {'building_id': h['building_id'], 'building_name': h['building_name']},
             })
 
-        BUILDING_KEYWORDS = {
-            'library': 'library-complex',
-            'ict': 'ict-center',
+        KEYWORDS = {
+            'library':     'library-complex',
+            'ict':         'ict-center',
             'engineering': 'engineering-block',
-            'admin': 'admin-tower',
-            'lab': 'science-labs',
+            'admin':       'admin-tower',
+            'lab':         'science-labs',
             'student hub': 'student-hub',
         }
 
-        detected_building = None
-        # If follow_up_context is present, "near there" / "from there" inherit it
+        detected = None
         if follow_up_context and follow_up_context.get('building_id'):
-            if any(p in user_message_lower for p in ['near there', 'from there', 'what about', 'parking']):
-                detected_building = follow_up_context['building_id']
-
-        if not detected_building:
-            for keyword, b_id in BUILDING_KEYWORDS.items():
-                if keyword in user_message_lower:
-                    detected_building = b_id
+            if any(p in lower for p in ['near there', 'from there', 'what about', 'parking']):
+                detected = follow_up_context['building_id']
+        if not detected:
+            for kw, bid in KEYWORDS.items():
+                if kw in lower:
+                    detected = bid
                     break
 
-        if detected_building and any(
-            k in user_message_lower
-            for k in ['route', 'get to', 'find', 'where', 'go to', 'navigate', 'near there', 'parking']
-        ):
+        if detected and any(k in lower for k in ['route', 'get to', 'find', 'where', 'go to', 'navigate']):
             from .routing import CAMPUS_NODES
-            dest = CAMPUS_NODES.get(detected_building)
+            dest  = CAMPUS_NODES.get(detected)
             route = compute_route(6.4666, 3.5963, dest[0], dest[1]) if dest else None
-
-            building_name = detected_building.replace('-', ' ').title()
             try:
-                b_obj = Building.objects.filter(code__icontains=detected_building.split('-')[0].upper()[:3]).first()
-                if b_obj:
-                    building_name = b_obj.name
+                b_obj = Building.objects.filter(code__icontains=detected.split('-')[0][:3].upper()).first()
+                name  = b_obj.name if b_obj else detected.replace('-', ' ').title()
             except Exception:
-                pass
-
+                name = detected.replace('-', ' ').title()
             return Response({
-                'role': 'assistant',
-                'content': (
-                    f"I'll guide you to {building_name}! "
-                    f"The route is {route.get('distanceMeters', 0)}m and takes about "
-                    f"{route.get('durationMinutes', 1)} minute(s) walking."
-                ),
-                'buildingId': detected_building,
-                'routeData': route,
-                'intent': 'navigate',
-                'followUpContext': {
-                    'building_id': detected_building,
-                    'building_name': building_name,
-                },
+                'role':            'assistant',
+                'content':         f"Guiding you to {name}! Route: {route.get('distanceMeters', 0)}m, ~{route.get('durationMinutes', 1)} min.",
+                'buildingId':      detected,
+                'routeData':       route,
+                'intent':          'navigate',
+                'followUpContext': {'building_id': detected, 'building_name': name},
             })
 
         return Response({
-            'role': 'assistant',
-            'content': (
-                "I can help you navigate campus! Try asking "
-                "'How do I get to the library?' or 'Where is the ICT Centre?'"
-            ),
-            'intent': 'general',
+            'role':            'assistant',
+            'content':         "Ask me to find a building — e.g. 'How do I get to the library?'",
+            'intent':          'general',
             'followUpContext': None,
         })
+
+# ── Compatibility alias ───────────────────────────────────────────────────
+# urls.py imports EventListView; we expose it as the EventViewSet list action
+# so the same ModelViewSet powers both the router and any direct path() usage.
+EventListView = EventViewSet.as_view({'get': 'list', 'post': 'create'})

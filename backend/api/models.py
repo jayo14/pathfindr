@@ -71,7 +71,7 @@ class LostItem(models.Model):
     image_url = models.URLField(max_length=500, blank=True, null=True)
     reported_at = models.DateTimeField(auto_now_add=True)
     contact_hint = models.CharField(max_length=255)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reported_items')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reported_items')
 
     def __str__(self):
         return self.title
