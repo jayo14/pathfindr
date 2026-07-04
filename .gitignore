@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Backend env (use .env.example as the committed template)
+backend/.env
+
 # typescript
 *.tsbuildinfo
 
