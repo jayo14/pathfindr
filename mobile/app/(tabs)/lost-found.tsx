@@ -13,7 +13,9 @@ import {
 import { useState, useMemo } from 'react';
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -193,6 +195,11 @@ export default function LostFoundScreen() {
       <Modal visible={isModalVisible} animationType="slide" presentationStyle="pageSheet">
         {/* Only protect top — the sheet itself extends to device bottom */}
         <SafeAreaView style={styles.modalContainer} edges={['top']}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+          >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Report Item</Text>
             <Pressable onPress={() => setIsModalVisible(false)}>
@@ -290,6 +297,7 @@ export default function LostFoundScreen() {
               )}
             </Pressable>
           </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>

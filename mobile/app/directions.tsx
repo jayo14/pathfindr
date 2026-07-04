@@ -11,14 +11,17 @@ import {
   Share2,
   Navigation2
 } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   FlatList,
   Pressable,
-  Alert
+  Alert,
+  PanResponder,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -40,6 +43,59 @@ export default function DirectionsScreen() {
   const [isActiveNav, setIsActiveNav] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const SNAP_TOP = SCREEN_HEIGHT * 0.15; // 85% height
+  const SNAP_BOTTOM = SCREEN_HEIGHT * 0.70; // 30% height (leaves 70% map)
+  const COLLAPSED_SHIFT = SNAP_BOTTOM - SNAP_TOP;
+
+  const translateY = useRef(new Animated.Value(COLLAPSED_SHIFT)).current;
+  const lastTranslateY = useRef(COLLAPSED_SHIFT);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        translateY.setOffset(lastTranslateY.current);
+        translateY.setValue(0);
+      },
+      onPanResponderMove: (e, gestureState) => {
+        const nextValue = lastTranslateY.current + gestureState.dy;
+        if (nextValue >= 0 && nextValue <= COLLAPSED_SHIFT) {
+          translateY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (e, gestureState) => {
+        translateY.flattenOffset();
+        const currentY = lastTranslateY.current + gestureState.dy;
+        let targetY = COLLAPSED_SHIFT;
+
+        if (gestureState.vy < -0.3) {
+          targetY = 0; // Expand
+        } else if (gestureState.vy > 0.3) {
+          targetY = COLLAPSED_SHIFT; // Collapse
+        } else {
+          if (currentY < COLLAPSED_SHIFT / 2) {
+            targetY = 0;
+          } else {
+            targetY = COLLAPSED_SHIFT;
+          }
+        }
+
+        Animated.spring(translateY, {
+          toValue: targetY,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 8,
+        }).start(() => {
+          lastTranslateY.current = targetY;
+        });
+      },
+    })
+  ).current;
 
   const destination = useMemo(
     () => buildings.find((building) => building.id === params.buildingId),
@@ -168,8 +224,29 @@ export default function DirectionsScreen() {
         </View>
       ) : (
         /* ── Regular bottom sheet ──────────────────────────────────────── */
-        <View style={[styles.overlayCard, isActiveNav && styles.activeOverlay, { bottom: insets.bottom + 16 }]}>
-          <View style={styles.headerRow}>
+        <Animated.View
+          style={[
+            styles.overlayCard,
+            isActiveNav && styles.activeOverlay,
+            {
+              transform: [{ translateY }],
+              height: SCREEN_HEIGHT * 0.85,
+              bottom: 0,
+              left: 0,
+              right: 0,
+              margin: 0,
+              borderBottomLeftRadius: 0,
+              borderBottomRightRadius: 0,
+              paddingBottom: insets.bottom + 16,
+            }
+          ]}
+        >
+          {/* Drag Handle Bar */}
+          <View style={styles.dragHandleContainer} {...panResponder.panHandlers}>
+            <View style={styles.dragHandle} />
+          </View>
+
+          <View style={styles.headerRow} {...panResponder.panHandlers}>
             <View style={styles.iconWrap}>
               <MapPinned color={theme.colors.primary} size={20} />
             </View>
@@ -241,7 +318,7 @@ export default function DirectionsScreen() {
               </Pressable>
             )}
           </View>
-        </View>
+        </Animated.View>
       )}
     </SafeAreaView>
   );
@@ -308,7 +385,6 @@ const styles = StyleSheet.create({
   overlayCard: {
     margin: 18,
     position: 'absolute',
-    // `bottom` is set dynamically in JSX using insets.bottom
     left: 0,
     right: 0,
     borderRadius: 28,
@@ -316,7 +392,19 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 16,
     ...theme.shadow,
-    maxHeight: '60%',
+  },
+  dragHandleContainer: {
+    width: '100%',
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -8,
+  },
+  dragHandle: {
+    width: 38,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#CBD5E1',
   },
   activeOverlay: {
     borderColor: theme.colors.primary,
@@ -391,7 +479,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   stepsList: {
-    maxHeight: 200,
+    flex: 1,
   },
   stepRow: {
     flexDirection: 'row',

@@ -10,8 +10,10 @@ import {
   Navigation,
   Navigation2,
   X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useCallback } from 'react';
 import {
   FlatList,
   Modal,
@@ -20,6 +22,11 @@ import {
   StyleSheet,
   Text,
   View,
+  PanResponder,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -51,32 +58,38 @@ function BuildingPicker({
 }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <SafeAreaView style={pickerStyles.container} edges={['top']}>
-        <View style={pickerStyles.header}>
-          <Text style={pickerStyles.title}>{title}</Text>
-          <Pressable onPress={onClose} style={pickerStyles.closeBtn}>
-            <X size={20} color={theme.colors.text} />
-          </Pressable>
-        </View>
-        <FlatList
-          data={buildings}
-          keyExtractor={item => item.id}
-          contentContainerStyle={pickerStyles.list}
-          renderItem={({ item }) => (
-            <Pressable
-              style={pickerStyles.row}
-              onPress={() => { void Haptics.selectionAsync(); onSelect(item); }}
-            >
-              <View style={pickerStyles.dot} />
-              <View style={pickerStyles.rowText}>
-                <Text style={pickerStyles.name}>{item.name}</Text>
-                <Text style={pickerStyles.meta}>{item.code} · {item.category}</Text>
-              </View>
-              <ArrowRight size={16} color={theme.colors.textMuted} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <SafeAreaView style={pickerStyles.container} edges={['top']}>
+          <View style={pickerStyles.header}>
+            <Text style={pickerStyles.title}>{title}</Text>
+            <Pressable onPress={onClose} style={pickerStyles.closeBtn}>
+              <X size={20} color={theme.colors.text} />
             </Pressable>
-          )}
-        />
-      </SafeAreaView>
+          </View>
+          <FlatList
+            data={buildings}
+            keyExtractor={item => item.id}
+            contentContainerStyle={pickerStyles.list}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <Pressable
+                style={pickerStyles.row}
+                onPress={() => { void Haptics.selectionAsync(); onSelect(item); }}
+              >
+                <View style={pickerStyles.dot} />
+                <View style={pickerStyles.rowText}>
+                  <Text style={pickerStyles.name}>{item.name}</Text>
+                  <Text style={pickerStyles.meta}>{item.code} · {item.category}</Text>
+                </View>
+                <ArrowRight size={16} color={theme.colors.textMuted} />
+              </Pressable>
+            )}
+          />
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -118,6 +131,17 @@ const pickerStyles = StyleSheet.create({
   meta: { fontSize: 12, fontFamily: 'DMSans_400Regular', color: theme.colors.textMuted, marginTop: 2 },
 });
 
+// ── Step icon ─────────────────────────────────────────────────────────────
+function StepIcon({ type }: { type: NavigationStep['icon'] }) {
+  switch (type) {
+    case 'straight':   return <Navigation   size={16} color={theme.colors.primary} />;
+    case 'turn-left':  return <CornerDownLeft  size={16} color={theme.colors.primary} />;
+    case 'turn-right': return <CornerDownRight size={16} color={theme.colors.primary} />;
+    case 'arrive':     return <MapPinned    size={16} color={theme.colors.accent} />;
+    default: return null;
+  }
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────
 export default function DirectionsTabScreen() {
   const { buildings } = useBuildings();
@@ -130,8 +154,69 @@ export default function DirectionsTabScreen() {
   const [showDestPicker, setShowDestPicker] = useState(false);
   const [isActiveNav, setIsActiveNav] = useState(false);
 
-  // Origin: use live GPS location if no building selected; otherwise use the
-  // selected origin building's coordinate.
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+  const TAB_BAR_HEIGHT = 56 + insets.bottom;
+
+  // Sheet snap positions (translateY relative to top of sheet container)
+  // Peeked  = sheet takes ~32% of screen  → translateY = large
+  // Expanded = sheet takes ~55% of screen  → translateY = small
+  const SHEET_PEEK_HEIGHT   = SCREEN_HEIGHT * 0.32;
+  const SHEET_EXPAND_HEIGHT = SCREEN_HEIGHT * 0.58;
+
+  // The sheet sits inside a container that starts right below the map area.
+  // We position it absolutely from the bottom and animate its height-like
+  // appearance by translating it vertically inside a fixed-size wrapper.
+  const WRAPPER_HEIGHT = SHEET_EXPAND_HEIGHT;                  // max sheet size
+  const PEEK_OFFSET    = WRAPPER_HEIGHT - SHEET_PEEK_HEIGHT;   // how much to push down when peeked
+  const EXPAND_OFFSET  = 0;                                    // full height = no offset
+
+  const translateY    = useRef(new Animated.Value(PEEK_OFFSET)).current;
+  const lastY         = useRef(PEEK_OFFSET);
+  const isExpanded    = useRef(false);
+
+  const snapTo = useCallback((targetY: number, animated = true) => {
+    isExpanded.current = targetY === EXPAND_OFFSET;
+    if (animated) {
+      Animated.spring(translateY, {
+        toValue: targetY,
+        useNativeDriver: true,
+        tension: 55,
+        friction: 9,
+      }).start(() => { lastY.current = targetY; });
+    } else {
+      translateY.setValue(targetY);
+      lastY.current = targetY;
+    }
+  }, [translateY, EXPAND_OFFSET]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+      onPanResponderGrant: () => {
+        translateY.setOffset(lastY.current);
+        translateY.setValue(0);
+      },
+      onPanResponderMove: (_, g) => {
+        const next = lastY.current + g.dy;
+        if (next >= EXPAND_OFFSET && next <= PEEK_OFFSET) {
+          translateY.setValue(g.dy);
+        }
+      },
+      onPanResponderRelease: (_, g) => {
+        translateY.flattenOffset();
+        const curr = lastY.current + g.dy;
+        let target: number;
+        if (g.vy < -0.4 || curr < WRAPPER_HEIGHT / 2) {
+          target = EXPAND_OFFSET;   // snap up
+        } else {
+          target = PEEK_OFFSET;     // snap down
+        }
+        snapTo(target);
+      },
+    })
+  ).current;
+
   const origin = originBuilding?.coordinate ?? location ?? buildings[0]?.coordinate;
   const destination = destinationBuilding;
 
@@ -145,12 +230,12 @@ export default function DirectionsTabScreen() {
   });
 
   const steps = useMemo(() => {
-    if (directionsQuery.data?.instructions && directionsQuery.data.instructions.length > 0) {
+    if (directionsQuery.data?.instructions?.length) {
       return directionsQuery.data.instructions.map((inst: any) => ({
         instruction: inst.instruction,
         distanceMeters: inst.distanceMeters,
         icon: (
-          inst.instruction.includes('Turn left') ? 'turn-left' :
+          inst.instruction.includes('Turn left')  ? 'turn-left'  :
           inst.instruction.includes('Turn right') ? 'turn-right' :
           (inst.instruction.includes('Arrived') || inst.instruction.includes('arrived')) ? 'arrive' : 'straight'
         ) as NavigationStep['icon'],
@@ -166,17 +251,12 @@ export default function DirectionsTabScreen() {
     setIsActiveNav(v => !v);
   };
 
-  const handleDismissArrival = () => {
-    resetArrival();
-    setIsActiveNav(false);
-  };
-
   const mapRegion = useMemo(() => {
     if (origin && destination) {
       return {
-        latitude: (origin.latitude + destination.coordinate.latitude) / 2,
+        latitude:  (origin.latitude  + destination.coordinate.latitude)  / 2,
         longitude: (origin.longitude + destination.coordinate.longitude) / 2,
-        latitudeDelta: Math.abs(origin.latitude - destination.coordinate.latitude) * 3 + 0.006,
+        latitudeDelta:  Math.abs(origin.latitude  - destination.coordinate.latitude)  * 3 + 0.006,
         longitudeDelta: Math.abs(origin.longitude - destination.coordinate.longitude) * 3 + 0.006,
       };
     }
@@ -191,133 +271,178 @@ export default function DirectionsTabScreen() {
     return m;
   }, [destination]);
 
-  const StepIcon = ({ type }: { type: NavigationStep['icon'] }) => {
-    switch (type) {
-      case 'straight':    return <Navigation   size={16} color={theme.colors.primary} />;
-      case 'turn-left':   return <CornerDownLeft  size={16} color={theme.colors.primary} />;
-      case 'turn-right':  return <CornerDownRight size={16} color={theme.colors.primary} />;
-      case 'arrive':      return <MapPinned    size={16} color={theme.colors.accent}   />;
-      default: return null;
-    }
-  };
+  // Route summary pill content
+  const routeSummary = directionsQuery.data
+    ? `${directionsQuery.data.durationMinutes} min · ${formatDistance(directionsQuery.data.distanceMeters)}`
+    : destination
+    ? 'Calculating…'
+    : 'Pick a destination';
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']}>
-      {/* ── Map ─────────────────────────────────────────────────────────── */}
-      <View style={styles.mapWrap}>
-        <NativeMapView
-          region={mapRegion}
-          markers={markers}
-          route={directionsQuery.data?.points ?? []}
-          userLocation={origin}
-          style={styles.map}
-          followsUserLocation={isActiveNav}
-          showsUserLocation={isActiveNav}
-        />
-      </View>
+    <View style={styles.root}>
+      {/* ── Full-screen map (sits behind everything) ── */}
+      <NativeMapView
+        region={mapRegion}
+        markers={markers}
+        route={directionsQuery.data?.points ?? []}
+        userLocation={origin}
+        style={StyleSheet.absoluteFill}
+        followsUserLocation={isActiveNav}
+        showsUserLocation={isActiveNav}
+      />
 
-      {/* ── Arrival overlay ─────────────────────────────────────────────── */}
+      {/* ── Top safe-area status bar area ── */}
+      <SafeAreaView style={styles.topSafe} edges={['top']} pointerEvents="box-none">
+        {/* Route summary floating pill */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryPill}>
+            <Navigation2 size={14} color={theme.colors.primary} />
+            <Text style={styles.summaryText}>{routeSummary}</Text>
+          </View>
+          {directionsQuery.data && (
+            <View style={styles.walkPill}>
+              <Text style={styles.walkText}>🚶 Walk</Text>
+            </View>
+          )}
+        </View>
+      </SafeAreaView>
+
+      {/* ── Arrival overlay ── */}
       {hasArrived && (
         <View style={styles.arrivalOverlay}>
           <View style={styles.arrivalCard}>
-            <CheckCircle2 size={44} color={theme.colors.accent} />
+            <CheckCircle2 size={48} color={theme.colors.accent} />
             <Text style={styles.arrivalTitle}>You've arrived!</Text>
             <Text style={styles.arrivalSub}>{destination?.name}</Text>
-            <PrimaryButton label="Done" onPress={handleDismissArrival} style={{ width: '100%', marginTop: 8 }} />
+            <PrimaryButton
+              label="Done"
+              onPress={() => { resetArrival(); setIsActiveNav(false); }}
+              style={{ width: '100%', marginTop: 8 }}
+            />
           </View>
         </View>
       )}
 
-      {/* ── Bottom panel ────────────────────────────────────────────────── */}
-      <View style={[styles.panel, { paddingBottom: insets.bottom + 8 }]}>
-        {/* Route header pill */}
-        <View style={styles.routeHeaderRow}>
-          <View style={styles.pill}>
-            <Navigation2 size={14} color={theme.colors.primary} />
-            <Text style={styles.pillText}>
-              {directionsQuery.data
-                ? `${directionsQuery.data.durationMinutes} min · ${formatDistance(directionsQuery.data.distanceMeters)}`
-                : 'Fastest Route'}
-            </Text>
+      {/* ── Bottom sheet wrapper ── */}
+      <View
+        style={[
+          styles.sheetWrapper,
+          { bottom: TAB_BAR_HEIGHT, height: WRAPPER_HEIGHT },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View
+          style={[styles.sheet, { transform: [{ translateY }] }]}
+        >
+          {/* Drag handle */}
+          <View style={styles.handleArea} {...panResponder.panHandlers}>
+            <View style={styles.handle} />
+            {/* Collapse/expand hint */}
+            <Pressable
+              onPress={() => snapTo(isExpanded.current ? PEEK_OFFSET : EXPAND_OFFSET)}
+              style={styles.handleToggle}
+              hitSlop={10}
+            >
+              {isExpanded.current
+                ? <ChevronDown size={18} color={theme.colors.textMuted} />
+                : <ChevronUp   size={18} color={theme.colors.textMuted} />
+              }
+            </Pressable>
           </View>
-          {directionsQuery.data && (
-            <View style={styles.modePill}>
-              <Text style={styles.modeText}>🏃 Walk</Text>
+
+          {/* Origin / Destination selectors */}
+          <View style={styles.routeInputs}>
+            <Pressable style={styles.routeInput} onPress={() => setShowOriginPicker(true)}>
+              <View style={[styles.inputDot, { backgroundColor: theme.colors.primary }]} />
+              <View style={styles.inputTexts}>
+                <Text style={styles.inputLabel}>From</Text>
+                <Text style={styles.inputValue} numberOfLines={1}>
+                  {originBuilding ? originBuilding.name : 'My current location'}
+                </Text>
+              </View>
+              <MapPin size={15} color={theme.colors.textMuted} />
+            </Pressable>
+
+            <View style={styles.routeDivider} />
+
+            <Pressable style={styles.routeInput} onPress={() => setShowDestPicker(true)}>
+              <View style={[styles.inputDot, { backgroundColor: theme.colors.accent }]} />
+              <View style={styles.inputTexts}>
+                <Text style={styles.inputLabel}>To</Text>
+                <Text
+                  style={[styles.inputValue, !destination && styles.inputPlaceholder]}
+                  numberOfLines={1}
+                >
+                  {destination ? destination.name : 'Choose destination…'}
+                </Text>
+              </View>
+              <MapPin size={15} color={theme.colors.textMuted} />
+            </Pressable>
+          </View>
+
+          {/* Steps / states */}
+          <View style={styles.stepsArea}>
+            {!destination ? (
+              <StateCard
+                title="Where to?"
+                description="Tap 'Choose destination' above to pick a building and get walking directions."
+              />
+            ) : directionsQuery.isLoading ? (
+              <StateCard title="Finding route…" description="Calculating the best walking path." loading />
+            ) : steps.length > 0 ? (
+              <>
+                <Text style={styles.stepsHeader}>
+                  Step-by-step  ·  {steps.length} steps
+                </Text>
+                <ScrollView
+                  style={styles.stepsList}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
+                  {steps.map((step, i) => (
+                    <View
+                      key={i}
+                      style={[styles.stepRow, i === 0 && isActiveNav && styles.stepHighlight]}
+                    >
+                      <View style={styles.stepIcon}>
+                        <StepIcon type={step.icon} />
+                      </View>
+                      <Text style={styles.stepText} numberOfLines={3}>
+                        {step.instruction}
+                      </Text>
+                      {step.distanceMeters > 0 && (
+                        <Text style={styles.stepDist}>{step.distanceMeters}m</Text>
+                      )}
+                    </View>
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
+          </View>
+
+          {/* CTA row */}
+          {destination && !directionsQuery.isLoading && (
+            <View style={styles.ctaRow}>
+              <PrimaryButton
+                label={isActiveNav ? 'Stop Navigation' : 'Start Navigation'}
+                onPress={toggleNav}
+                variant={isActiveNav ? 'secondary' : 'primary'}
+                style={styles.ctaBtn}
+              />
+              {!isActiveNav && (
+                <Pressable
+                  style={styles.refreshBtn}
+                  onPress={() => void directionsQuery.refetch()}
+                >
+                  <Navigation2 size={20} color={theme.colors.primary} />
+                </Pressable>
+              )}
             </View>
           )}
-        </View>
-
-        {/* Origin / Destination selectors */}
-        <View style={styles.routeInputs}>
-          <Pressable style={styles.routeInput} onPress={() => setShowOriginPicker(true)}>
-            <View style={[styles.inputDot, { backgroundColor: theme.colors.primary }]} />
-            <View style={styles.inputTexts}>
-              <Text style={styles.inputLabel}>Start Location</Text>
-              <Text style={styles.inputValue} numberOfLines={1}>
-                {originBuilding ? originBuilding.name : 'Currently at Campus Hub'}
-              </Text>
-            </View>
-            <MapPin size={16} color={theme.colors.textMuted} />
-          </Pressable>
-
-          <View style={styles.divider} />
-
-          <Pressable style={styles.routeInput} onPress={() => setShowDestPicker(true)}>
-            <View style={[styles.inputDot, { backgroundColor: theme.colors.accent }]} />
-            <View style={styles.inputTexts}>
-              <Text style={styles.inputLabel}>Target Location</Text>
-              <Text style={[styles.inputValue, !destination && styles.inputPlaceholder]} numberOfLines={1}>
-                {destination ? destination.name : 'Choose a destination…'}
-              </Text>
-            </View>
-            <MapPin size={16} color={theme.colors.textMuted} />
-          </Pressable>
-        </View>
-
-        {/* Steps / states */}
-        {!destination ? (
-          <StateCard
-            title="Where are you headed?"
-            description="Tap 'Target Location' above to pick a building and get step-by-step walking directions."
-          />
-        ) : directionsQuery.isLoading ? (
-          <StateCard title="Calculating route…" description="Finding the best walking path across campus." loading />
-        ) : directionsQuery.data && steps.length > 0 ? (
-          <View style={styles.stepsSection}>
-            <Text style={styles.stepsHeader}>Step-by-step directions</Text>
-            <ScrollView style={styles.stepsList} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-              {steps.map((step, i) => (
-                <View key={i} style={[styles.stepRow, i === 0 && isActiveNav && styles.stepHighlight]}>
-                  <View style={styles.stepIcon}><StepIcon type={step.icon} /></View>
-                  <Text style={styles.stepText} numberOfLines={3}>{step.instruction}</Text>
-                  {step.distanceMeters > 0 && (
-                    <Text style={styles.stepDist}>{step.distanceMeters}m</Text>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* CTA */}
-        {destination && !directionsQuery.isLoading && (
-          <View style={styles.ctaRow}>
-            <PrimaryButton
-              label={isActiveNav ? 'Stop Navigation' : 'Start Navigation Simulation'}
-              onPress={toggleNav}
-              variant={isActiveNav ? 'secondary' : 'primary'}
-              style={styles.ctaBtn}
-            />
-            {!isActiveNav && (
-              <Pressable style={styles.refreshBtn} onPress={() => void directionsQuery.refetch()}>
-                <Navigation2 size={20} color={theme.colors.primary} />
-              </Pressable>
-            )}
-          </View>
-        )}
+        </Animated.View>
       </View>
 
-      {/* ── Pickers ──────────────────────────────────────────────────────── */}
+      {/* ── Pickers ── */}
       <BuildingPicker
         visible={showOriginPicker}
         title="Choose start location"
@@ -332,23 +457,63 @@ export default function DirectionsTabScreen() {
         onSelect={b => { setDestinationBuilding(b); setShowDestPicker(false); }}
         onClose={() => setShowDestPicker(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.colors.background },
-  mapWrap: { flex: 1 },
-  map: { flex: 1 },
+  root: { flex: 1, backgroundColor: '#000' },
 
-  // Arrival
+  // Top safe area (summary pill)
+  topSafe: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 10,
+    pointerEvents: 'box-none',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    margin: 16,
+    marginTop: 8,
+  },
+  summaryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: theme.radius.pill,
+    ...theme.shadow,
+  },
+  summaryText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.primary,
+  },
+  walkPill: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: theme.radius.pill,
+    ...theme.shadow,
+  },
+  walkText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
+    color: '#2E7D32',
+  },
+
+  // Arrival overlay
   arrivalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
-    zIndex: 20,
+    zIndex: 30,
   },
   arrivalCard: {
     width: '100%',
@@ -360,77 +525,105 @@ const styles = StyleSheet.create({
     ...theme.shadow,
   },
   arrivalTitle: { fontSize: 24, fontFamily: 'Poppins_800ExtraBold', color: theme.colors.text },
-  arrivalSub: { fontSize: 15, fontFamily: 'Poppins_700Bold', color: theme.colors.primary },
+  arrivalSub:   { fontSize: 15, fontFamily: 'Poppins_700Bold',      color: theme.colors.primary },
 
-  // Panel
-  panel: {
+  // Sheet wrapper + sheet
+  sheetWrapper: {
+    position: 'absolute',
+    left: 0, right: 0,
+    overflow: 'visible',
+  },
+  sheet: {
+    flex: 1,
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 18,
-    gap: 14,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+    gap: 12,
     ...theme.shadow,
-    maxHeight: '55%',
   },
 
-  // Route header
-  routeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  pill: {
-    flexDirection: 'row',
+  // Drag handle
+  handleArea: {
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: theme.colors.surfaceAlt,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: theme.radius.pill,
+    paddingTop: 10,
+    paddingBottom: 2,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
-  pillText: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.primary },
-  modePill: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: theme.radius.pill,
+  handle: {
+    width: 36, height: 5,
+    borderRadius: 3,
+    backgroundColor: '#CBD5E1',
   },
-  modeText: { fontSize: 13, fontFamily: 'Poppins_700Bold', color: '#2E7D32' },
+  handleToggle: {
+    position: 'absolute',
+    right: 0,
+    padding: 4,
+  },
 
   // Route inputs
   routeInputs: {
     backgroundColor: theme.colors.background,
-    borderRadius: 20,
-    overflow: 'hidden',
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    overflow: 'hidden',
   },
   routeInput: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 13,
   },
   inputDot: { width: 10, height: 10, borderRadius: 5 },
   inputTexts: { flex: 1 },
-  inputLabel: { fontSize: 11, fontFamily: 'Poppins_700Bold', color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
-  inputValue: { fontSize: 15, fontFamily: 'Poppins_700Bold', color: theme.colors.text, marginTop: 1 },
-  inputPlaceholder: { color: theme.colors.textMuted, fontFamily: 'DMSans_400Regular' },
-  divider: { height: 1, backgroundColor: theme.colors.border, marginLeft: 38 },
+  inputLabel: {
+    fontSize: 10,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  inputValue: {
+    fontSize: 14,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.text,
+    marginTop: 1,
+  },
+  inputPlaceholder: {
+    color: theme.colors.textMuted,
+    fontFamily: 'DMSans_400Regular',
+  },
+  routeDivider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginLeft: 38,
+  },
 
   // Steps
-  stepsSection: { gap: 8 },
-  stepsHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.text },
-  stepsList: { maxHeight: 180 },
+  stepsArea: { flex: 1, minHeight: 60 },
+  stepsHeader: {
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.textMuted,
+    marginBottom: 4,
+  },
+  stepsList: { flex: 1 },
   stepRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     gap: 10,
   },
   stepHighlight: {
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
+    borderRadius: 10,
     borderBottomWidth: 0,
   },
   stepIcon: {
@@ -439,14 +632,29 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: theme.colors.border,
   },
-  stepText: { flex: 1, fontSize: 13, fontFamily: 'DMSans_400Regular', color: theme.colors.text },
-  stepDist: { fontSize: 11, fontFamily: 'Poppins_700Bold', color: theme.colors.textMuted },
+  stepText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.text,
+    lineHeight: 18,
+  },
+  stepDist: {
+    fontSize: 11,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.textMuted,
+  },
 
   // CTA
-  ctaRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    paddingTop: 4,
+  },
   ctaBtn: { flex: 1 },
   refreshBtn: {
-    width: 52, height: 52, borderRadius: 26,
+    width: 50, height: 50, borderRadius: 25,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: theme.colors.border,

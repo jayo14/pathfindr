@@ -1,23 +1,29 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Locate,
   Search,
   Settings,
   User,
+  MapPin,
+  X,
+  Navigation2,
 } from 'lucide-react-native';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
+  Animated,
   FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { MapCategoryFilter } from '@/components/MapCategoryFilter';
 import { NativeMapView, NativeMarker, NativeMapViewRef } from '@/components/NativeMapView';
 import { theme } from '@/constants/theme';
 import { useBuildings } from '@/hooks/useCampusData';
@@ -26,21 +32,23 @@ import { useAppStore } from '@/store/useAppStore';
 import { Building, BuildingCategory, StoredMapRegion } from '@/types/domain';
 import { clusterBuildings } from '@/utils/clustering';
 import { formatDistance, getDistanceMeters, getInitialRegion } from '@/utils/geo';
+import { searchBuildings } from '@/utils/search';
 
-// Category filters matching the spec
-const SECTORS = ['All Sectors', 'Academic', 'Recreation', 'Sports & Parks', 'Core Services'] as const;
+const SECTORS = ['All', 'Academic', 'Recreation', 'Sports', 'Services'] as const;
 type Sector = typeof SECTORS[number];
 
 const SECTOR_TO_CATEGORY: Record<Sector, BuildingCategory | 'all'> = {
-  'All Sectors':   'all',
-  'Academic':      'faculty',
-  'Recreation':    'facility',
-  'Sports & Parks':'lab',
-  'Core Services': 'admin',
+  'All':        'all',
+  'Academic':   'faculty',
+  'Recreation': 'facility',
+  'Sports':     'lab',
+  'Services':   'admin',
 };
 
 export default function MapScreen() {
   const mapRef = useRef<NativeMapViewRef>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const params = useLocalSearchParams<{ focusSearch?: string }>();
   const { buildings, isLoading } = useBuildings();
   const {
     location,
@@ -54,15 +62,63 @@ export default function MapScreen() {
   const setSelectedBuildingId = useAppStore(s => s.setSelectedBuildingId);
 
   const [currentRegion, setCurrentRegion] = useState<StoredMapRegion>(getInitialRegion(lastMapRegion));
-  const [activeSector, setActiveSector] = useState<Sector>('All Sectors');
+  const [activeSector, setActiveSector] = useState<Sector>('All');
   const [selectedBuildingId, setLocalSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  // Animate search suggestions in/out
+  const suggestionAnim = useRef(new Animated.Value(0)).current;
+
+  const showingSuggestions = searchQuery.trim().length > 0 && isSearchFocused;
+
+  useEffect(() => {
+    Animated.spring(suggestionAnim, {
+      toValue: showingSuggestions ? 1 : 0,
+      useNativeDriver: true,
+      tension: 60,
+      friction: 9,
+    }).start();
+  }, [showingSuggestions]);
+
+  useEffect(() => {
+    if (params.focusSearch === 'true') {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 300);
+    }
+  }, [params.focusSearch]);
 
   const activeCategory = SECTOR_TO_CATEGORY[activeSector];
 
   const filteredBuildings = useMemo<Building[]>(() => {
-    if (activeCategory === 'all') return buildings;
-    return buildings.filter(b => b.category === activeCategory);
-  }, [buildings, activeCategory]);
+    let result = buildings;
+    if (activeCategory !== 'all') {
+      result = result.filter(b => b.category === activeCategory);
+    }
+    if (searchQuery.trim() !== '') {
+      result = searchBuildings(result, { query: searchQuery });
+    }
+    return result;
+  }, [buildings, activeCategory, searchQuery]);
+
+  const handleSelectBuilding = useCallback((building: Building) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSearchQuery(building.name);
+    setLocalSelectedId(building.id);
+    setSelectedBuildingId(building.id);
+    setIsSearchFocused(false);
+    searchInputRef.current?.blur();
+
+    if (building.coordinate) {
+      mapRef.current?.animateToRegion({
+        latitude: building.coordinate.latitude,
+        longitude: building.coordinate.longitude,
+        latitudeDelta: 0.004,
+        longitudeDelta: 0.004,
+      }, 700);
+    }
+  }, [setSelectedBuildingId]);
 
   const clusteredMarkers = useMemo<NativeMarker[]>(() => {
     const clusters = clusterBuildings(filteredBuildings, currentRegion);
@@ -112,16 +168,22 @@ export default function MapScreen() {
         longitude: location.longitude,
         latitudeDelta: 0.005,
         longitudeDelta: 0.005,
-      }, 800);
+      }, 700);
     }
   }, [locationPermissionStatus, requestPermission, refreshLocation, location]);
 
-  // Duration estimate: walking ~80m/min
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    setLocalSelectedId(null);
+    setSelectedBuildingId(undefined);
+    searchInputRef.current?.focus();
+  }, [setSelectedBuildingId]);
+
   const walkMins = (m: number) => Math.max(1, Math.round(m / 80));
 
   return (
     <View style={styles.root}>
-      {/* ── Full-screen map ─────────────────────────────────────────────── */}
+      {/* Full-screen map */}
       <NativeMapView
         ref={mapRef}
         region={getInitialRegion(lastMapRegion)}
@@ -133,7 +195,7 @@ export default function MapScreen() {
         showsUserLocation={locationPermissionStatus === 'granted'}
       />
 
-      {/* ── Top overlay (header + search + categories) ───────────────────── */}
+      {/* Top overlay: header + search + chips */}
       <SafeAreaView style={styles.topOverlay} edges={['top']} pointerEvents="box-none">
         {/* Header row */}
         <View style={styles.headerRow}>
@@ -141,19 +203,14 @@ export default function MapScreen() {
             <Text style={styles.headerLabel}>LASUSTECH</Text>
             <Text style={styles.headerTitle}>Campus Guide</Text>
           </View>
-
           <View style={styles.headerRight}>
-            <Pressable style={styles.headerBtn} onPress={() => router.push('/search')}>
-              <Search size={18} color={theme.colors.primary} />
-            </Pressable>
             <Pressable style={styles.headerBtn} onPress={() => router.push('/(tabs)/settings')}>
               <Settings size={18} color={theme.colors.text} />
             </Pressable>
-            {/* Student profile avatar */}
             <Pressable
               style={styles.avatarBtn}
               onPress={() => router.push('/(tabs)/settings')}
-              accessibilityLabel="Student profile"
+              accessibilityLabel="Profile"
             >
               <User size={18} color="#FFF" />
             </Pressable>
@@ -161,13 +218,74 @@ export default function MapScreen() {
         </View>
 
         {/* Search pill */}
-        <Pressable style={styles.searchPill} onPress={() => router.push('/search')}>
-          <Search size={16} color={theme.colors.textMuted} />
-          <Text style={styles.searchPillText}>Search Nearby Campus…</Text>
-          <Pressable style={styles.locateBtn} onPress={() => void handleCenterOnUser()}>
+        <View style={[styles.searchPill, isSearchFocused && styles.searchPillFocused]}>
+          <Search size={16} color={isSearchFocused ? theme.colors.primary : theme.colors.textMuted} />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchPillInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search buildings, facilities…"
+            placeholderTextColor={theme.colors.textMuted}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable onPress={handleClearSearch} style={styles.iconBtn} hitSlop={8}>
+              <X size={16} color={theme.colors.textMuted} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            style={styles.locateBtn}
+            onPress={() => void handleCenterOnUser()}
+            accessibilityLabel="Center on my location"
+          >
             <Locate size={16} color={theme.colors.primary} />
           </Pressable>
-        </Pressable>
+        </View>
+
+        {/* Search suggestions */}
+        {showingSuggestions && (
+          <Animated.View
+            style={[
+              styles.suggestionsContainer,
+              {
+                opacity: suggestionAnim,
+                transform: [{ translateY: suggestionAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+              },
+            ]}
+          >
+            {filteredBuildings.length === 0 ? (
+              <View style={styles.noResultsRow}>
+                <Text style={styles.noResultsText}>No buildings matched "{searchQuery}"</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredBuildings.slice(0, 6)}
+                keyExtractor={item => item.id}
+                keyboardShouldPersistTaps="handled"
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.suggestionRow}
+                    onPress={() => handleSelectBuilding(item)}
+                  >
+                    <View style={styles.suggestionIcon}>
+                      <MapPin size={14} color={theme.colors.primary} />
+                    </View>
+                    <View style={styles.suggestionTexts}>
+                      <Text style={styles.suggestionName}>{item.name}</Text>
+                      <Text style={styles.suggestionMeta}>{item.code} · {item.category}</Text>
+                    </View>
+                  </Pressable>
+                )}
+              />
+            )}
+          </Animated.View>
+        )}
 
         {/* Sector filter chips */}
         <ScrollView
@@ -175,6 +293,7 @@ export default function MapScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.sectorRow}
           pointerEvents="box-none"
+          keyboardShouldPersistTaps="handled"
         >
           {SECTORS.map(s => {
             const active = s === activeSector;
@@ -191,36 +310,51 @@ export default function MapScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* ── Bottom sheet: nearby places ──────────────────────────────────── */}
+      {/* Bottom sheet: nearby places */}
       <View style={styles.bottomSheet} pointerEvents="box-none">
         {/* Selected building highlight */}
         {selectedBuilding && (
           <View style={styles.selectedBar}>
-            <Text style={styles.selectedLabel}>Selected:</Text>
-            <Text style={styles.selectedName}>{selectedBuilding.name}</Text>
+            <MapPin size={14} color={theme.colors.primary} />
+            <View style={styles.selectedInfo}>
+              <Text style={styles.selectedName} numberOfLines={1}>{selectedBuilding.name}</Text>
+              <Text style={styles.selectedCategory}>
+                {selectedBuilding.category.charAt(0).toUpperCase() + selectedBuilding.category.slice(1)}
+              </Text>
+            </View>
             <Pressable
-              style={styles.selectedDirections}
+              style={styles.directionsBtn}
               onPress={() => {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push(`/directions?buildingId=${selectedBuilding.id}`);
               }}
             >
-              <Text style={styles.selectedDirectionsText}>Directions</Text>
+              <Navigation2 size={13} color="#FFF" />
+              <Text style={styles.directionsBtnText}>Directions</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => { setLocalSelectedId(null); setSearchQuery(''); setSelectedBuildingId(undefined); }}
+              style={styles.closeSelectedBtn}
+              hitSlop={8}
+            >
+              <X size={14} color={theme.colors.textMuted} />
             </Pressable>
           </View>
         )}
 
-        <Text style={styles.nearbyTitle}>Nearby Campus Places</Text>
+        <Text style={styles.nearbyTitle}>
+          {searchQuery.trim()
+            ? `${filteredBuildings.length} result${filteredBuildings.length !== 1 ? 's' : ''} found`
+            : 'Nearby Campus Places'}
+        </Text>
 
         <FlatList
-          data={nearbyBuildings.slice(0, 10)}
+          data={nearbyBuildings.slice(0, 8)}
           keyExtractor={item => item.id}
           horizontal={false}
           scrollEnabled={false}
           renderItem={({ item }) => {
-            const dist = location
-              ? formatDistance(item.distanceMeters)
-              : null;
+            const dist = location ? formatDistance(item.distanceMeters) : null;
             const mins = location ? walkMins(item.distanceMeters) : null;
             const isSelected = item.id === selectedBuildingId;
 
@@ -229,36 +363,28 @@ export default function MapScreen() {
                 style={[styles.placeRow, isSelected && styles.placeRowSelected]}
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  handleMarkerPress(item.id);
+                  handleSelectBuilding(item);
                   router.push(`/building/${item.id}`);
                 }}
               >
-                {/* Thumbnail */}
-                <View style={styles.placeThumb}>
+                <View style={[styles.placeThumb, isSelected && styles.placeThumbSelected]}>
                   <Text style={styles.placeCode}>{item.code}</Text>
                 </View>
-
-                {/* Info */}
                 <View style={styles.placeInfo}>
                   <Text style={styles.placeName} numberOfLines={1}>{item.name}</Text>
                   <Text style={styles.placeCategory}>
-                    {item.category.charAt(0).toUpperCase() + item.category.slice(1)} Facility
+                    {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
                   </Text>
                 </View>
-
-                {/* Distance badge */}
                 {dist && mins ? (
                   <View style={styles.distBadge}>
                     <Text style={styles.distValue}>{dist}</Text>
-                    <Text style={styles.distMins}>{mins} mins</Text>
+                    <Text style={styles.distMins}>{mins} min</Text>
                   </View>
                 ) : (
-                  <Pressable
-                    style={styles.inspectBtn}
-                    onPress={() => router.push(`/building/${item.id}`)}
-                  >
-                    <Text style={styles.inspectText}>INSPECT</Text>
-                  </Pressable>
+                  <View style={styles.inspectBtn}>
+                    <Text style={styles.inspectText}>View</Text>
+                  </View>
                 )}
               </Pressable>
             );
@@ -273,7 +399,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.mapTint },
   map: { ...StyleSheet.absoluteFillObject },
 
-  // Top overlay
+  // ── Top overlay
   topOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
@@ -293,7 +419,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
     color: theme.colors.primary,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
   headerTitle: {
     fontSize: 18,
@@ -303,7 +429,7 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', gap: 8 },
   headerBtn: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.93)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     alignItems: 'center', justifyContent: 'center',
     ...theme.shadow,
   },
@@ -314,37 +440,96 @@ const styles = StyleSheet.create({
     ...theme.shadow,
   },
 
-  // Search pill
+  // ── Search pill
   searchPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     marginHorizontal: 16,
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.97)',
     borderRadius: theme.radius.pill,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
     ...theme.shadow,
   },
-  searchPillText: {
+  searchPillFocused: {
+    borderColor: theme.colors.primary,
+    backgroundColor: '#FFF',
+  },
+  searchPillInput: {
     flex: 1,
     fontSize: 14,
     fontFamily: 'DMSans_400Regular',
-    color: theme.colors.textMuted,
+    color: theme.colors.text,
+    paddingVertical: 0,
+  },
+  iconBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   locateBtn: {
-    width: 30, height: 30, borderRadius: 15,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Sector chips
+  // ── Search suggestions
+  suggestionsContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 18,
+    marginHorizontal: 16,
+    paddingVertical: 4,
+    ...theme.shadow,
+    zIndex: 99,
+    overflow: 'hidden',
+  },
+  noResultsRow: {
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  noResultsText: {
+    fontSize: 13,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  suggestionIcon: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  suggestionTexts: { flex: 1 },
+  suggestionName: {
+    fontSize: 14,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.text,
+  },
+  suggestionMeta: {
+    fontSize: 11,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+    marginTop: 1,
+  },
+
+  // ── Sector chips
   sectorRow: { paddingHorizontal: 16, gap: 8 },
   sectorChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: theme.radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
@@ -359,46 +544,67 @@ const styles = StyleSheet.create({
   },
   sectorChipTextActive: { color: '#FFF' },
 
-  // Bottom sheet
+  // ── Bottom sheet
   bottomSheet: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 90, // clear tab bar
-    maxHeight: '52%',
+    paddingTop: 14,
+    paddingBottom: 96,
+    maxHeight: '50%',
     ...theme.shadow,
   },
 
-  // Selected building
+  // Selected building bar
   selectedBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 14,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  selectedLabel: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: theme.colors.textMuted },
-  selectedName: { flex: 1, fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.text },
-  selectedDirections: {
+  selectedInfo: { flex: 1 },
+  selectedName: {
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.text,
+  },
+  selectedCategory: {
+    fontSize: 11,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+  },
+  directionsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: theme.radius.pill,
   },
-  selectedDirectionsText: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: '#FFF' },
+  directionsBtnText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_700Bold',
+    color: '#FFF',
+  },
+  closeSelectedBtn: {
+    padding: 4,
+  },
 
   nearbyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Poppins_800ExtraBold',
     color: theme.colors.text,
-    marginBottom: 10,
+    marginBottom: 8,
   },
 
   // Place row
@@ -406,7 +612,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -418,22 +624,52 @@ const styles = StyleSheet.create({
     marginHorizontal: -8,
   },
   placeThumb: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 42, height: 42, borderRadius: 11,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
-  placeCode: { fontSize: 11, fontFamily: 'Poppins_800ExtraBold', color: theme.colors.primary },
-  placeInfo: { flex: 1 },
-  placeName: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.text },
-  placeCategory: { fontSize: 12, fontFamily: 'DMSans_400Regular', color: theme.colors.textMuted, marginTop: 2 },
-  distBadge: { alignItems: 'flex-end', gap: 2 },
-  distValue: { fontSize: 13, fontFamily: 'Poppins_800ExtraBold', color: theme.colors.primary },
-  distMins: { fontSize: 11, fontFamily: 'DMSans_400Regular', color: theme.colors.textMuted },
-  inspectBtn: {
+  placeThumbSelected: {
     backgroundColor: theme.colors.primary,
+  },
+  placeCode: {
+    fontSize: 10,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: theme.colors.primary,
+  },
+  placeInfo: { flex: 1 },
+  placeName: {
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.text,
+  },
+  placeCategory: {
+    fontSize: 11,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+    marginTop: 1,
+  },
+  distBadge: { alignItems: 'flex-end', gap: 1 },
+  distValue: {
+    fontSize: 13,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: theme.colors.primary,
+  },
+  distMins: {
+    fontSize: 10,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+  },
+  inspectBtn: {
+    backgroundColor: theme.colors.surfaceAlt,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  inspectText: { fontSize: 11, fontFamily: 'Poppins_700Bold', color: '#FFF' },
+  inspectText: {
+    fontSize: 11,
+    fontFamily: 'Poppins_700Bold',
+    color: theme.colors.primary,
+  },
 });

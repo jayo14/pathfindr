@@ -98,7 +98,7 @@ export default function HomeScreen() {
 
           <Pressable
             style={styles.searchBar}
-            onPress={() => router.push('/search')}
+            onPress={() => router.push({ pathname: '/(tabs)/map', params: { focusSearch: 'true' } })}
             accessibilityLabel="Search campus buildings"
           >
             <MapPin size={18} color={theme.colors.textMuted} />

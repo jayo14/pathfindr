@@ -5,7 +5,9 @@ import { Clipboard, QrCode, ScanLine, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -133,7 +135,10 @@ export default function ScanScreen() {
     return (
       <SafeAreaView style={styles.permRoot} edges={['top', 'bottom']}>
         <Stack.Screen options={{ headerShown: false }} />
-
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View style={styles.permScreen}>
           <View style={styles.permIconWrap}>
             <QrCode size={48} color={theme.colors.primary} />
@@ -188,6 +193,7 @@ export default function ScanScreen() {
             <Text style={styles.backBtnText}>Cancel</Text>
           </Pressable>
         </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -228,6 +234,10 @@ export default function ScanScreen() {
       </View>
 
       {/* Bottom panel */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.bottomKAV}
+      >
       <SafeAreaView
         style={[styles.bottomPanel, { paddingBottom: insets.bottom + 8 }]}
         edges={['bottom']}
@@ -264,6 +274,7 @@ export default function ScanScreen() {
           {manualError ? <Text style={styles.manualError}>{manualError}</Text> : null}
         </View>
       </SafeAreaView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -346,8 +357,10 @@ const styles = StyleSheet.create({
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 4 },
 
   // Bottom panel
-  bottomPanel: {
+  bottomKAV: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
+  },
+  bottomPanel: {
     paddingHorizontal: 24,
     paddingTop: 20,
     gap: 14,
