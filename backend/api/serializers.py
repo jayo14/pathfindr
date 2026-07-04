@@ -150,9 +150,9 @@ class LostItemSerializer(serializers.ModelSerializer):
             'user',
         ]
         extra_kwargs = {
-            'location_name': {'required': True},
+            'location_name': {'required': True, 'write_only': True},
             'image_url':     {'required': False, 'allow_blank': True, 'allow_null': True},
-            'contact_hint':  {'required': False, 'allow_blank': True},
+            'contact_hint':  {'required': False, 'allow_blank': True, 'write_only': True},
         }
 
     def create(self, validated_data):

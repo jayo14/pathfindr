@@ -425,4 +425,39 @@ const styles = StyleSheet.create({
     marginTop: 28,
     paddingBottom: 12,
   },
+  // Modal styles
+  modalContainer: { flex: 1, backgroundColor: theme.colors.background },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  modalTitle: { fontSize: 18, fontFamily: 'Poppins_700Bold', color: theme.colors.text },
+  modalClose: { fontSize: 15, fontFamily: 'DMSans_500Medium', color: theme.colors.primary },
+  modalBody: { padding: 20 },
+  inputLabel: {
+    fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.text, marginBottom: 8,
+  },
+  textInput: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.text,
+  },
+  saveBtn: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 15,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 32,
+    ...theme.shadow,
+  },
+  saveBtnText: {
+    color: '#FFF', fontSize: 16, fontFamily: 'Poppins_700Bold',
+  },
 });
