@@ -18,7 +18,11 @@ react {
     // Use Expo CLI to bundle the app, this ensures the Metro config
     // works correctly with Expo projects.
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
-    bundleCommand = "NODE_ENV=production export:embed"
+    bundleCommand = "export:embed"
+    // NODE_ENV is set to "production" by EAS for production/preview builds.
+    // Do NOT put it in bundleCommand — the Gradle plugin passes bundleCommand
+    // directly as arguments to node, not through a shell, so env-var assignments
+    // in that string are treated as literal CLI args and break the build.
 
     /* Folders */
      //   The root of your project, i.e. where "package.json" lives. Default is '../..'
