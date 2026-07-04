@@ -46,6 +46,13 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#0D8C60"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "PathFindr needs your location to show you on the campus map and calculate walking routes.",
