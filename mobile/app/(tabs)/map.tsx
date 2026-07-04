@@ -204,13 +204,22 @@ export default function MapScreen() {
             <Text style={styles.headerTitle}>Campus Guide</Text>
           </View>
           <View style={styles.headerRight}>
-            <Pressable style={styles.headerBtn} onPress={() => router.push('/(tabs)/settings')}>
+            <Pressable
+              style={styles.headerBtn}
+              onPress={() => router.push('/(tabs)/settings')}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+            >
               <Settings size={18} color={theme.colors.text} />
             </Pressable>
             <Pressable
               style={styles.avatarBtn}
               onPress={() => router.push('/(tabs)/settings')}
+              accessible={true}
+              accessibilityRole="button"
               accessibilityLabel="Profile"
+              accessibilityHint="Opens your account settings"
             >
               <User size={18} color="#FFF" />
             </Pressable>
@@ -218,8 +227,17 @@ export default function MapScreen() {
         </View>
 
         {/* Search pill */}
-        <View style={[styles.searchPill, isSearchFocused && styles.searchPillFocused]}>
-          <Search size={16} color={isSearchFocused ? theme.colors.primary : theme.colors.textMuted} />
+        <View
+          style={[styles.searchPill, isSearchFocused && styles.searchPillFocused]}
+          accessible={false}
+        >
+          {/* Decorative icon */}
+          <Search
+            size={16}
+            color={isSearchFocused ? theme.colors.primary : theme.colors.textMuted}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
           <TextInput
             ref={searchInputRef}
             style={styles.searchPillInput}
@@ -232,16 +250,35 @@ export default function MapScreen() {
             returnKeyType="search"
             autoCorrect={false}
             autoCapitalize="none"
+            accessible={true}
+            accessibilityRole="search"
+            accessibilityLabel="Search campus buildings and facilities"
+            accessibilityHint="Type to filter map results by building name or category"
+            accessibilityValue={{ text: searchQuery || undefined }}
           />
           {searchQuery.length > 0 ? (
-            <Pressable onPress={handleClearSearch} style={styles.iconBtn} hitSlop={8}>
+            <Pressable
+              onPress={handleClearSearch}
+              style={styles.iconBtn}
+              hitSlop={8}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
               <X size={16} color={theme.colors.textMuted} />
             </Pressable>
           ) : null}
           <Pressable
             style={styles.locateBtn}
             onPress={() => void handleCenterOnUser()}
-            accessibilityLabel="Center on my location"
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel="Center map on my location"
+            accessibilityHint={
+              locationPermissionStatus === 'granted'
+                ? 'Moves the map to show your current position'
+                : 'Requests location permission then centres the map on you'
+            }
           >
             <Locate size={16} color={theme.colors.primary} />
           </Pressable>
@@ -272,8 +309,16 @@ export default function MapScreen() {
                   <Pressable
                     style={styles.suggestionRow}
                     onPress={() => handleSelectBuilding(item)}
+                    accessible={true}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.name}, ${item.category}`}
+                    accessibilityHint="Opens this building on the map"
                   >
-                    <View style={styles.suggestionIcon}>
+                    <View
+                      style={styles.suggestionIcon}
+                      accessible={false}
+                      importantForAccessibility="no"
+                    >
                       <MapPin size={14} color={theme.colors.primary} />
                     </View>
                     <View style={styles.suggestionTexts}>
@@ -302,6 +347,11 @@ export default function MapScreen() {
                 key={s}
                 style={[styles.sectorChip, active && styles.sectorChipActive]}
                 onPress={() => { void Haptics.selectionAsync(); setActiveSector(s); }}
+                accessible={true}
+                accessibilityRole="tab"
+                accessibilityLabel={s}
+                accessibilityHint={`Filter map to show ${s === 'All' ? 'all buildings' : s.toLowerCase() + ' buildings'}`}
+                accessibilityState={{ selected: active }}
               >
                 <Text style={[styles.sectorChipText, active && styles.sectorChipTextActive]}>{s}</Text>
               </Pressable>
@@ -314,9 +364,13 @@ export default function MapScreen() {
       <View style={styles.bottomSheet} pointerEvents="box-none">
         {/* Selected building highlight */}
         {selectedBuilding && (
-          <View style={styles.selectedBar}>
-            <MapPin size={14} color={theme.colors.primary} />
-            <View style={styles.selectedInfo}>
+          <View
+            style={styles.selectedBar}
+            accessible={true}
+            accessibilityLabel={`Selected building: ${selectedBuilding.name}`}
+          >
+            <MapPin size={14} color={theme.colors.primary} accessibilityElementsHidden importantForAccessibility="no" />
+            <View style={styles.selectedInfo} accessible={false}>
               <Text style={styles.selectedName} numberOfLines={1}>{selectedBuilding.name}</Text>
               <Text style={styles.selectedCategory}>
                 {selectedBuilding.category.charAt(0).toUpperCase() + selectedBuilding.category.slice(1)}
@@ -328,14 +382,21 @@ export default function MapScreen() {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push(`/directions?buildingId=${selectedBuilding.id}`);
               }}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel={`Get directions to ${selectedBuilding.name}`}
+              accessibilityHint="Starts turn-by-turn walking directions"
             >
-              <Navigation2 size={13} color="#FFF" />
+              <Navigation2 size={13} color="#FFF" accessibilityElementsHidden importantForAccessibility="no" />
               <Text style={styles.directionsBtnText}>Directions</Text>
             </Pressable>
             <Pressable
               onPress={() => { setLocalSelectedId(null); setSearchQuery(''); setSelectedBuildingId(undefined); }}
               style={styles.closeSelectedBtn}
               hitSlop={8}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss selected building"
             >
               <X size={14} color={theme.colors.textMuted} />
             </Pressable>
@@ -366,6 +427,15 @@ export default function MapScreen() {
                   handleSelectBuilding(item);
                   router.push(`/building/${item.id}`);
                 }}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  dist && mins
+                    ? `${item.name}, ${item.category}, ${dist}, about ${mins} minutes walk`
+                    : `${item.name}, ${item.category}`
+                }
+                accessibilityHint="Opens building details"
+                accessibilityState={{ selected: isSelected }}
               >
                 <View style={[styles.placeThumb, isSelected && styles.placeThumbSelected]}>
                   <Text style={styles.placeCode}>{item.code}</Text>

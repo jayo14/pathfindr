@@ -9,9 +9,21 @@ interface CategoryChipProps {
   isActive: boolean;
   onPress: () => void;
   testID?: string;
+  /** Override accessibility label. Defaults to "<label>, [selected|not selected]". */
+  accessibilityLabel?: string;
+  /** Extra hint for assistive tech. */
+  accessibilityHint?: string;
 }
 
-export function CategoryChip({ label, category, isActive, onPress, testID }: CategoryChipProps) {
+export function CategoryChip({
+  label,
+  category,
+  isActive,
+  onPress,
+  testID,
+  accessibilityLabel,
+  accessibilityHint,
+}: CategoryChipProps) {
   const activeColor = category === 'all' ? theme.colors.primary : categoryColors[category];
 
   return (
@@ -19,6 +31,11 @@ export function CategoryChip({ label, category, isActive, onPress, testID }: Cat
       onPress={onPress}
       style={[styles.chip, isActive ? { backgroundColor: activeColor } : styles.inactiveChip]}
       testID={testID}
+      accessible={true}
+      accessibilityRole="tab"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint ?? `Filter buildings by ${label}`}
+      accessibilityState={{ selected: isActive }}
     >
       <Text style={[styles.label, isActive ? styles.activeLabel : styles.inactiveLabel]}>{label}</Text>
     </Pressable>

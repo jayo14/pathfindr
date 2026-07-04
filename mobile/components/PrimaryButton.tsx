@@ -18,6 +18,14 @@ interface PrimaryButtonProps {
   isLoading?: boolean;
   style?: ViewStyle;
   testID?: string;
+  /** Override the default accessibilityLabel (defaults to `label`). */
+  accessibilityLabel?: string;
+  /** Hint read after the label, e.g. "Starts turn-by-turn directions". */
+  accessibilityHint?: string;
+  /** Defaults to 'button'. */
+  accessibilityRole?: 'button' | 'link' | 'none';
+  /** Mark disabled state for assistive tech even when not loading. */
+  disabled?: boolean;
 }
 
 export function PrimaryButton({
@@ -27,6 +35,10 @@ export function PrimaryButton({
   isLoading = false,
   style,
   testID,
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole = 'button',
+  disabled = false,
 }: PrimaryButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -40,16 +52,22 @@ export function PrimaryButton({
   };
 
   const isSecondary = variant === 'secondary';
+  const isDisabled  = isLoading || disabled;
 
   return (
     <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <Pressable
-        disabled={isLoading}
+        disabled={isDisabled}
         onPress={onPress}
         onPressIn={() => animateTo(0.97)}
         onPressOut={() => animateTo(1)}
         style={[styles.button, isSecondary ? styles.secondaryButton : styles.primaryButton]}
         testID={testID}
+        accessible={true}
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
         {isLoading ? (
           <ActivityIndicator color={isSecondary ? theme.colors.primary : '#FFFFFF'} />

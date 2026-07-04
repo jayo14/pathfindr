@@ -63,6 +63,9 @@ export default function BuildingDetailScreen() {
         <Pressable
           style={styles.backButtonInline}
           onPress={() => router.back()}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <ArrowLeft size={20} color={theme.colors.primary} />
           <Text style={styles.backButtonText}>Go Back</Text>
@@ -84,6 +87,9 @@ export default function BuildingDetailScreen() {
             <Pressable
               style={styles.floatingBackButton}
               onPress={() => router.back()}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
             >
               <ArrowLeft size={24} color={theme.colors.text} />
             </Pressable>
@@ -107,8 +113,12 @@ export default function BuildingDetailScreen() {
           <Text style={styles.description}>{building.description}</Text>
 
           <View style={styles.infoGrid}>
-            <View style={styles.infoItem}>
-              <View style={styles.iconCircle}>
+            <View
+              style={styles.infoItem}
+              accessible={true}
+              accessibilityLabel={`Opening hours: ${building.openingHours}`}
+            >
+              <View style={styles.iconCircle} accessible={false} importantForAccessibility="no">
                 <Clock size={20} color={theme.colors.primary} />
               </View>
               <View>
@@ -117,8 +127,12 @@ export default function BuildingDetailScreen() {
               </View>
             </View>
             {building.departments.length > 0 && (
-              <View style={styles.infoItem}>
-                <View style={styles.iconCircle}>
+              <View
+                style={styles.infoItem}
+                accessible={true}
+                accessibilityLabel={`Primary department: ${building.departments[0]}`}
+              >
+                <View style={styles.iconCircle} accessible={false} importantForAccessibility="no">
                   <Building2 size={20} color={theme.colors.primary} />
                 </View>
                 <View>
@@ -136,9 +150,15 @@ export default function BuildingDetailScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.tagsContainer}
+              accessibilityLabel={`Tags: ${building.tags.join(', ')}`}
             >
               {building.tags.map((tag) => (
-                <View key={tag} style={styles.tagBadge}>
+                <View
+                  key={tag}
+                  style={styles.tagBadge}
+                  accessible={true}
+                  accessibilityLabel={`Tag: ${tag}`}
+                >
                   <Text style={styles.tagText}>#{tag}</Text>
                 </View>
               ))}
@@ -148,9 +168,14 @@ export default function BuildingDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Departments</Text>
             {building.departments.map((dept, index) => (
-              <View key={index} style={styles.listItem}>
+              <View
+                key={index}
+                style={styles.listItem}
+                accessible={true}
+                accessibilityLabel={dept}
+              >
                 <Text style={styles.listItemText}>{dept}</Text>
-                <ChevronRight size={18} color={theme.colors.textMuted} />
+                <ChevronRight size={18} color={theme.colors.textMuted} accessibilityElementsHidden importantForAccessibility="no" />
               </View>
             ))}
           </View>
@@ -158,8 +183,13 @@ export default function BuildingDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Facilities</Text>
             {building.facilities.map((facility, index) => (
-              <View key={index} style={styles.facilityItem}>
-                <View style={styles.checkIcon}>
+              <View
+                key={index}
+                style={styles.facilityItem}
+                accessible={true}
+                accessibilityLabel={facility}
+              >
+                <View style={styles.checkIcon} accessible={false} importantForAccessibility="no">
                   <Check size={14} color="#FFFFFF" />
                 </View>
                 <Text style={styles.facilityText}>{facility}</Text>
@@ -174,6 +204,7 @@ export default function BuildingDetailScreen() {
           label="Get Directions"
           onPress={handleGetDirections}
           style={styles.directionsButton}
+          accessibilityHint="Starts turn-by-turn walking directions to this building"
         />
       </View>
     </View>
