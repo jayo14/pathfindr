@@ -5,12 +5,12 @@ import {
   BookOpen,
   ChevronRight,
   Dumbbell,
-  Layers,
   MapPin,
   QrCode,
   Settings,
   Sparkles,
-  TreePine,
+  UtensilsCrossed,
+  PackageSearch,
   Zap,
 } from 'lucide-react-native';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
@@ -25,10 +25,10 @@ import { useAppStore } from '@/store/useAppStore';
 
 // ── Quick Access Categories ───────────────────────────────────────────────
 const CATEGORIES = [
-  { label: 'Academic',       icon: BookOpen,  color: '#0D8C60', bg: '#E8F5F0', filter: 'faculty'  },
-  { label: 'Recreation',     icon: TreePine,  color: '#7C5CFA', bg: '#F0ECFF', filter: 'facility' },
-  { label: 'Sports & Parks', icon: Dumbbell,  color: '#F27C42', bg: '#FFF3EC', filter: 'lab'      },
-  { label: 'Core Services',  icon: Layers,    color: '#2078B4', bg: '#EBF4FF', filter: 'admin'    },
+  { label: 'Academic',     icon: BookOpen,        color: '#0D8C60', bg: '#E8F5F0', filter: 'faculty',  route: null },
+  { label: 'Lost & Found', icon: PackageSearch,   color: '#7C5CFA', bg: '#F0ECFF', filter: null,        route: '/(tabs)/lost-found' },
+  { label: 'Sports',       icon: Dumbbell,        color: '#F27C42', bg: '#FFF3EC', filter: 'lab',       route: null },
+  { label: 'Cafeteria',    icon: UtensilsCrossed, color: '#D85B73', bg: '#FFF0F4', filter: 'facility',  route: null },
 ] as const;
 
 // Hard-coded "recent enquiries" (demo data — replace with persisted history later)
@@ -54,9 +54,13 @@ export default function HomeScreen() {
     return formatDistance(getDistanceMeters(location, b.coordinate));
   };
 
-  const handleCategoryPress = (filter: string) => {
+  const handleCategoryPress = (cat: typeof CATEGORIES[number]) => {
     void Haptics.selectionAsync();
-    router.push(`/(tabs)/map?category=${filter}` as any);
+    if (cat.route) {
+      router.push(cat.route as any);
+    } else if (cat.filter) {
+      router.push(`/(tabs)/map?category=${cat.filter}` as any);
+    }
   };
 
   return (
@@ -120,7 +124,7 @@ export default function HomeScreen() {
               <Pressable
                 key={cat.label}
                 style={[styles.categoryCard, { backgroundColor: cat.bg }]}
-                onPress={() => handleCategoryPress(cat.filter)}
+                onPress={() => handleCategoryPress(cat)}
               >
                 <View style={[styles.categoryIcon, { backgroundColor: cat.color + '22' }]}>
                   <cat.icon size={22} color={cat.color} />

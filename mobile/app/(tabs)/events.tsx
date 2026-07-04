@@ -115,14 +115,14 @@ export default function EventsScreen() {
             featured ? (
               <FeaturedCard
                 item={featured}
-                onPress={() => router.push(`/building/${featured.buildingId}`)}
+                onPress={() => router.push(`/event/${featured.id}` as any)}
               />
             ) : null
           }
           renderItem={({ item }) => (
             <EventRow
               item={item}
-              onPress={() => router.push(`/building/${item.buildingId}`)}
+              onPress={() => router.push(`/event/${item.id}` as any)}
             />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -256,21 +256,23 @@ const styles = StyleSheet.create({
   // Tabs
   tabs: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 10,
     gap: 8,
+    alignItems: 'center',
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Poppins_700Bold',
     color: theme.colors.text,
+    lineHeight: 18,
   },
   tabTextActive: { color: '#FFF' },
 

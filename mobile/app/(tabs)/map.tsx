@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
   },
   sectorChipTextActive: { color: '#FFF' },
 
-  // ── Bottom sheet
+  // ── Bottom sheet: nearby places
   bottomSheet: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
@@ -553,7 +553,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 96,
+    paddingBottom: 72,
     maxHeight: '50%',
     ...theme.shadow,
   },
