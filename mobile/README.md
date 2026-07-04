@@ -1,51 +1,82 @@
-# Welcome to your Expo app 👋
+# PathFindr — Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+React Native / Expo app for campus navigation at LASUSTECH.
 
-## Get started
+**Stack:** Expo SDK 54 · Expo Router · TypeScript · Zustand · TanStack Query · Supabase
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Getting started
 
 ```bash
-npm run reset-project
+bun install          # or npm install
+npx expo start       # starts Metro bundler
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Open in Expo Go, an Android emulator, or a physical device.
 
-## Learn more
+---
 
-To learn more about developing your project with Expo, look at the following resources:
+## Environment
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+| File | Used when |
+|---|---|
+| `.env` | Local dev (`npx expo start`) |
+| `.env.development` | EAS `development` profile |
+| `.env.production` | EAS `production` profile |
 
-## Join the community
+Copy `.env.example` to `.env` for local dev:
 
-Join our community of developers creating universal apps.
+```
+EXPO_PUBLIC_API_URL=http://localhost:8000/api
+EXPO_PUBLIC_ENV=development
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-# pathfindr-mobile
+---
+
+## EAS Build (Android APK)
+
+Requires an Expo account linked to the project (`eas.json` already has the project ID).
+
+```bash
+eas login
+eas build --profile production --platform android
+```
+
+This builds a sideloadable APK using the production environment values from `.env.production`.
+
+---
+
+## Project structure
+
+```
+mobile/
+├── app/            # Expo Router screens (file-based routing)
+├── components/     # Shared UI components
+├── services/       # API client, auth, Supabase
+├── hooks/          # Custom React hooks
+├── store/          # Zustand global state
+├── utils/          # Geo, routing, clustering helpers
+├── constants/      # Theme, campus graph
+├── types/          # TypeScript domain types
+├── mocks/          # Sample campus data
+└── assets/         # Images and fonts
+```
+
+---
+
+## Key screens
+
+| Route | Screen |
+|---|---|
+| `/` | Splash / entry |
+| `/onboarding` | Welcome + location permission |
+| `/(tabs)/map` | Live campus map |
+| `/(tabs)/search` | Place search + category filters |
+| `/(tabs)/events` | Campus event feed |
+| `/(tabs)/lost-found` | Lost & found board |
+| `/building/[id]` | Building detail + directions |
+| `/directions` | Turn-by-turn walking route |
+| `/scan` | QR code scanner |
+| `/ai-assistant` | Campus AI chat |
+| `/freshers-tour` | Guided intro tour |
