@@ -10,7 +10,7 @@
       "pathfindr"
     ],
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -64,7 +64,8 @@
         {
           "cameraPermission": "PathFindr needs camera access to scan QR codes on campus signage and open building information instantly."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
