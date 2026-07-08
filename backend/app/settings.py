@@ -123,6 +123,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     'http://localhost:8081',
     'http://127.0.0.1:8081',
+    'https://pathfindr.vercel.app',
+    'https://pathfindr-app.vercel.app',
 ])
 CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
 
