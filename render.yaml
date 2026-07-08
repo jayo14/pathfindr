@@ -2,7 +2,7 @@ services:
   - type: web
     name: pathfindr-backend
     env: python
-    buildCommand: pip install -r requirements && python manage.py migrate && python manage.py seed_lasustech_data
+    buildCommand: pip install -r requirements && python manage.py migrate && python manage.py collectstatic --no-input && python manage.py seed_lasustech_data
     startCommand: gunicorn app.wsgi:application
     envVars:
       - key: DEBUG
