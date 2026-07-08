@@ -127,6 +127,10 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     'https://pathfindr-app.vercel.app',
 ])
 CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
+    'https://pathfindr.vercel.app',
+    'https://pathfindr-app.vercel.app',
+])
 
 REST_FRAMEWORK.update({
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
