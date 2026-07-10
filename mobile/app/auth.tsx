@@ -92,11 +92,11 @@ export default function AuthScreen() {
         await authService.register(email.trim(), email.trim(), password);
         const data = await authService.login(email.trim(), password);
         setIsAuthenticated(true);
-        setHasCompletedOnboarding(data.user.profile.has_completed_onboarding);
+        setHasCompletedOnboarding(!!data.user.profile.has_completed_onboarding);
       } else {
         const data = await authService.login(email.trim(), password);
         setIsAuthenticated(true);
-        setHasCompletedOnboarding(data.user.profile.has_completed_onboarding);
+        setHasCompletedOnboarding(!!data.user.profile.has_completed_onboarding);
       }
 
       setIsGuest(false);
