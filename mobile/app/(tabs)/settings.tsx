@@ -329,6 +329,16 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  modalContainer: { flex: 1, backgroundColor: theme.colors.surface },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  modalTitle: { fontSize: 22, fontFamily: 'Poppins_800ExtraBold', color: theme.colors.text },
+  modalClose: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: theme.colors.primary },
+  modalBody: { padding: 24, gap: 12 },
+  inputLabel: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: theme.colors.text },
+  textInput: { height: 50, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingHorizontal: 16, fontFamily: 'DMSans_400Regular', color: theme.colors.text, fontSize: 15, backgroundColor: theme.colors.surfaceAlt },
+  saveBtn: { backgroundColor: theme.colors.primary, height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 24 },
+  saveBtnText: { color: '#FFF', fontFamily: 'Poppins_700Bold', fontSize: 15 },
+
   root: { flex: 1, backgroundColor: theme.colors.background },
   scroll: { paddingBottom: 100 },
 
