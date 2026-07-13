@@ -6,6 +6,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from .views import (
+    # Health
+    HealthView,
     # Auth
     RegisterView,
     LoginView,
@@ -85,6 +87,9 @@ urlpatterns = [
 
     # ── AI ─────────────────────────────────────────────────────────────────
     path('ai/chat/', AIChatView.as_view(), name='ai-chat'),
+
+    # ── Health (liveness / readiness probe) ────────────────────────────────
+    path('health/', HealthView.as_view(), name='api-health'),
 
     # ── API schema / docs ──────────────────────────────────────────────────
     path('schema/', SpectacularAPIView.as_view(),                        name='schema'),

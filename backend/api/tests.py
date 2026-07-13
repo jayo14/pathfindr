@@ -111,6 +111,25 @@ class RoutingEngineTests(TestCase):
         node = nearest_node(6.4672, 3.5951)
         self.assertEqual(node, "ict-center")
 
+class HealthTests(TestCase):
+    def setUp(self):
+        self.client = Client(SERVER_NAME='localhost')
+    def test_health_endpoint(self):
+        r = self.client.get('/api/health/')
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn(data['status'], ['ok', 'degraded'])
+        self.assertIn('database', data)
+        self.assertIn('timestamp', data)
+    def test_health_supports_cors_preflight(self):
+        r = self.client.options(
+            '/api/health/',
+            HTTP_ORIGIN='https://pathfindr-app.vercel.app',
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET',
+        )
+        self.assertEqual(r.get('Access-Control-Allow-Origin'), 'https://pathfindr-app.vercel.app')
+
+
 class SecurityTests(TestCase):
     def setUp(self):
         self.client = APIClient()

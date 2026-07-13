@@ -7,7 +7,9 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.models import User
+from django.db import connection
 from django.db.models import Q
+from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from openai import OpenAI
 try:
@@ -35,6 +37,37 @@ from .serializers import (
     UserSerializer,
     WaitlistSerializer,
 )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Health
+# ══════════════════════════════════════════════════════════════════════════
+
+class HealthView(APIView):
+    """
+    GET /health/  (and /api/health/)
+    Liveness/readiness probe. Public, unauthenticated, and never rate-limited.
+    Verifies database connectivity and reports deployed app metadata.
+    """
+    permission_classes = (permissions.AllowAny,)
+    authentication_classes = ()  # bypass DRF auth entirely
+
+    def get(self, request):
+        db_ok = True
+        try:
+            connection.ensure_connection()
+            connection.cursor().execute("SELECT 1")
+        except Exception:
+            db_ok = False
+
+        payload = {
+            'status':    'ok' if db_ok else 'degraded',
+            'database':  'connected' if db_ok else 'unavailable',
+            'env':       os.getenv('DJANGO_ENV', 'development'),
+            'version':   getattr(settings, 'REST_FRAMEWORK', {}).get('VERSION', '1.0.0'),
+            'timestamp': _time.strftime('%Y-%m-%dT%H:%M:%SZ', _time.gmtime()),
+        }
+        return Response(payload, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 # ══════════════════════════════════════════════════════════════════════════

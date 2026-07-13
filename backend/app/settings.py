@@ -120,12 +120,17 @@ SIMPLE_JWT = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
+# Always allow the known production frontend origins, then merge any extra
+# origins supplied via env. This prevents an incomplete CORS_ALLOWED_ORIGINS
+# env var (e.g. http:// vs https:// mismatch) from silently breaking CORS.
+_PRODUCTION_ORIGINS = [
     'http://localhost:8081',
     'http://127.0.0.1:8081',
     'https://pathfindr.vercel.app',
     'https://pathfindr-app.vercel.app',
-])
+]
+_env_cors = env.list('CORS_ALLOWED_ORIGINS', default=[])
+CORS_ALLOWED_ORIGINS = sorted(set(_PRODUCTION_ORIGINS + _env_cors))
 CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://pathfindr.vercel.app',
