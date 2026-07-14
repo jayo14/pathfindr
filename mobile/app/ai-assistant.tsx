@@ -102,14 +102,15 @@ export default function AIAssistantScreen() {
       content: inputText.trim(),
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     const currentInput = inputText;
     setInputText('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await sendChatMessage(messages, currentInput);
+      const response = await sendChatMessage(nextMessages, currentInput);
       const assistantMsg: ChatMessage = {
         ...response,
         id: (Date.now() + 1).toString(),
