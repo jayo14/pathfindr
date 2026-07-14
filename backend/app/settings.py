@@ -120,24 +120,16 @@ SIMPLE_JWT = {
 }
 
 # CORS settings
-# Always allow the known production frontend origins, then merge any extra
-# origins supplied via env. This prevents an incomplete CORS_ALLOWED_ORIGINS
-# env var (e.g. http:// vs https:// mismatch) from silently breaking CORS.
-_PRODUCTION_ORIGINS = [
+# Origins are configured via env vars (comma-separated lists). Only localhost
+# dev origins are kept as a fallback default so local development works without
+# a .env file; production origins live in backend/.env (CORS_ALLOWED_ORIGINS
+# and CSRF_TRUSTED_ORIGINS).
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     'http://localhost:8081',
     'http://127.0.0.1:8081',
-    'https://pathfindr.vercel.app',
-    'https://pathfindr-app.vercel.app',
-    'https://pathfindr--7d6u8kw1td.expo.app',
-]
-_env_cors = env.list('CORS_ALLOWED_ORIGINS', default=[])
-CORS_ALLOWED_ORIGINS = sorted(set(_PRODUCTION_ORIGINS + _env_cors))
-CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
-CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
-    'https://pathfindr.vercel.app',
-    'https://pathfindr-app.vercel.app',
-    'https://pathfindr--7d6u8kw1td.expo.app',
 ])
+CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 
 REST_FRAMEWORK.update({
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
