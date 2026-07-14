@@ -103,13 +103,14 @@ export default function ChatScreen() {
       content: msg,
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     setInputText('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await sendChatMessage(messages, msg);
+      const response = await sendChatMessage(nextMessages, msg);
       const assistantMsg: ChatMessage = {
         ...response,
         id: (Date.now() + 1).toString(),
