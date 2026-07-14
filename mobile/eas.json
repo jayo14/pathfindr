@@ -9,7 +9,8 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://pathfindr-9fci.onrender.com/api",
         "EXPO_PUBLIC_ENV": "development"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -19,7 +20,8 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://pathfindr-9fci.onrender.com/api",
         "EXPO_PUBLIC_ENV": "production"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "distribution": "internal",
@@ -29,7 +31,8 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://pathfindr-9fci.onrender.com/api",
         "EXPO_PUBLIC_ENV": "production"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {

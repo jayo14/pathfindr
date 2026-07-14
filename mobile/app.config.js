@@ -1,6 +1,4 @@
-import { ExpoConfig } from "expo/config";
-
-const config: ExpoConfig = {
+const config = {
   name: "PathFindr",
   slug: "pathfindr",
   version: "1.0.0",
@@ -70,6 +68,12 @@ const config: ExpoConfig = {
   ],
   experiments: {
     typedRoutes: true,
+  },
+  updates: {
+    url: "https://u.expo.dev/e654bc2d-aa98-4405-996a-8392bb473b0c",
+  },
+  runtimeVersion: {
+    policy: "appVersion",
   },
   extra: {
     router: {
