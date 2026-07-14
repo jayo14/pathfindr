@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MessageCircle, Send, MapPin, User as UserIcon, Sparkles } from 'lucide-react-native';
+import { MessageCircle, Send, MapPin, User as UserIcon, Sparkles, Navigation2 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '@/constants/theme';
@@ -162,13 +162,22 @@ export default function ChatScreen() {
           )}
 
           {item.buildingId && (
-            <TouchableOpacity
-              style={styles.buildingChip}
-              onPress={() => router.push(`/building/${item.buildingId}` as any)}
-            >
-              <MapPin size={13} color={theme.colors.primary} />
-              <Text style={styles.buildingChipText}>View Building Details</Text>
-            </TouchableOpacity>
+            <View style={styles.buildingChipRow}>
+              <TouchableOpacity
+                style={styles.buildingChip}
+                onPress={() => router.push(`/building/${item.buildingId}` as any)}
+              >
+                <MapPin size={13} color={theme.colors.primary} />
+                <Text style={styles.buildingChipText}>View Building Details</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.directionsChip}
+                onPress={() => router.push(`/directions?buildingId=${item.buildingId}` as any)}
+              >
+                <Navigation2 size={13} color="#FFF" />
+                <Text style={styles.directionsChipText}>Get Directions</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -337,9 +346,15 @@ const styles = StyleSheet.create({
   },
   mapStats: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: theme.colors.primary, textAlign: 'center' },
 
-  // Building chip
-  buildingChip: {
+  // Building chip row
+  buildingChipRow: {
     marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  buildingChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -352,6 +367,17 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   buildingChipText: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: theme.colors.primary },
+  directionsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.pill,
+    alignSelf: 'flex-start',
+  },
+  directionsChipText: { fontSize: 12, fontFamily: 'Poppins_700Bold', color: '#FFF' },
 
   // Quick reply chips
   chipsRow: {

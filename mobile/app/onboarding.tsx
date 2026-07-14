@@ -7,6 +7,7 @@ import {
   MessageSquare,
   ChevronRight,
   CheckCircle2,
+  LogIn,
 } from 'lucide-react-native';
 import { useState } from 'react';
 import {
@@ -239,6 +240,16 @@ export default function OnboardingScreen() {
 
           {/* ── Footer actions ── */}
           <View style={styles.footer}>
+            {step === 0 && (
+              <Pressable
+                style={styles.signInBtn}
+                onPress={() => router.push('/auth')}
+              >
+                <LogIn size={18} color={theme.colors.primary} />
+                <Text style={styles.signInBtnText}>Sign in</Text>
+              </Pressable>
+            )}
+
             <Pressable
               style={styles.nextBtn}
               onPress={() => void handleNext()}
@@ -390,6 +401,20 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     gap: 10,
+  },
+  signInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.pill,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+  },
+  signInBtnText: {
+    fontSize: 16, fontFamily: 'Poppins_700Bold', color: theme.colors.primary,
   },
   nextBtn: {
     flexDirection: 'row',

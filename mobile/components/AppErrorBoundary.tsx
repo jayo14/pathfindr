@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Updates from 'expo-updates';
 
 import { theme } from '@/constants/theme';
 
@@ -27,7 +28,15 @@ export class AppErrorBoundary extends React.Component<
     console.log('PathFindr boundary error', error);
   }
 
-  private handleRetry = (): void => {
+  private handleRetry = async (): Promise<void> => {
+    try {
+      if (Updates.isEmbeddedLaunch) {
+        await Updates.reloadAsync();
+        return;
+      }
+    } catch {
+      // fallback below
+    }
     this.setState({ hasError: false });
   };
 

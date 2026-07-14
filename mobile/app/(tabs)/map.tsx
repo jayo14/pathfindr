@@ -447,14 +447,40 @@ export default function MapScreen() {
                   </Text>
                 </View>
                 {dist && mins ? (
-                  <View style={styles.distBadge}>
-                    <Text style={styles.distValue}>{dist}</Text>
-                    <Text style={styles.distMins}>{mins} min</Text>
+                  <View style={styles.distAndView}>
+                    <View style={styles.distBadge}>
+                      <Text style={styles.distValue}>{dist}</Text>
+                      <Text style={styles.distMins}>{mins} min</Text>
+                    </View>
+                    <Pressable
+                      style={styles.inspectBtn}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        router.push(`/building/${item.id}`);
+                      }}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${item.name}`}
+                      accessibilityHint="Opens building details"
+                    >
+                      <Text style={styles.inspectText}>View</Text>
+                    </Pressable>
                   </View>
                 ) : (
-                  <View style={styles.inspectBtn}>
+                  <Pressable
+                    style={styles.inspectBtn}
+                    onPress={() => {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      handleSelectBuilding(item);
+                      router.push(`/building/${item.id}`);
+                    }}
+                    accessible={true}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${item.name}`}
+                    accessibilityHint="Opens building details"
+                  >
                     <Text style={styles.inspectText}>View</Text>
-                  </View>
+                  </Pressable>
                 )}
               </Pressable>
             );
@@ -728,6 +754,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'DMSans_400Regular',
     color: theme.colors.textMuted,
+  },
+  distAndView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   inspectBtn: {
     backgroundColor: theme.colors.surfaceAlt,

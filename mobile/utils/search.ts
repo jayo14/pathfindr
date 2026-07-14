@@ -97,7 +97,7 @@ function scoreBuilding(building: Building, query: string): number {
   if (!query) return 1; // empty query → everything matches at equal rank
 
   const q = query.toLowerCase().trim();
-  const id = building.id.toLowerCase();
+  const id = String(building.id).toLowerCase();
   const name = building.name.toLowerCase();
   const code = building.code.toLowerCase();
   const category = building.category.toLowerCase();
