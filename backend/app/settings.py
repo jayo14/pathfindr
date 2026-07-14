@@ -128,6 +128,7 @@ _PRODUCTION_ORIGINS = [
     'http://127.0.0.1:8081',
     'https://pathfindr.vercel.app',
     'https://pathfindr-app.vercel.app',
+    'https://pathfindr--7d6u8kw1td.expo.app',
 ]
 _env_cors = env.list('CORS_ALLOWED_ORIGINS', default=[])
 CORS_ALLOWED_ORIGINS = sorted(set(_PRODUCTION_ORIGINS + _env_cors))
@@ -135,6 +136,7 @@ CORS_ALLOW_ALL_ORIGINS = False  # Never True in production
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://pathfindr.vercel.app',
     'https://pathfindr-app.vercel.app',
+    'https://pathfindr--7d6u8kw1td.expo.app',
 ])
 
 REST_FRAMEWORK.update({
