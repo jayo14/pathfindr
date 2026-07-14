@@ -1,9 +1,17 @@
 import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, useEffect, useState } from "react";
-import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
 
 import { categoryColors, theme } from '@/constants/theme';
 import { CampusCoordinate, RouteSegment, StoredMapRegion } from '@/types/domain';
+
+// On Android, react-native-maps renders via Google Maps and REQUIRES a valid
+// API key in the manifest. Without it the native MapView throws
+// "API key not found" and crashes the app. When the key is missing we fall
+// back to a placeholder so the rest of the screen (search, chips) still works
+// and the app never hard-crashes. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to enable.
+const HAS_GOOGLE_MAPS_KEY = Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+const MAP_UNAVAILABLE_ON_ANDROID = Platform.OS === 'android' && !HAS_GOOGLE_MAPS_KEY;
 
 export interface NativeMarker {
   id: string;
@@ -187,70 +195,79 @@ export const NativeMapView = memo(forwardRef<NativeMapViewRef, NativeMapViewProp
 
   return (
     <View style={[styles.container, style]}>
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFillObject}
-        initialRegion={region}
-        showsUserLocation={showsUserLocation}
-        followsUserLocation={followsUserLocation}
-        showsMyLocationButton={false}
-        showsCompass
-        rotateEnabled={false}
-        onMapReady={onMapReady}
-        onRegionChangeComplete={throttledRegionChange}
-      >
-        {markers.map((marker) => (
-          <BuildingMarker key={marker.id} marker={marker} onPress={onMarkerPress} />
-        ))}
+      {MAP_UNAVAILABLE_ON_ANDROID ? (
+        <View style={styles.mapFallback} accessible={true} accessibilityLabel="Map is unavailable">
+          <Text style={styles.mapFallbackTitle}>Map unavailable</Text>
+          <Text style={styles.mapFallbackText}>
+            Add a Google Maps API key to show the campus map.
+          </Text>
+        </View>
+      ) : (
+        <MapView
+          ref={mapRef}
+          style={StyleSheet.absoluteFillObject}
+          initialRegion={region}
+          showsUserLocation={showsUserLocation}
+          followsUserLocation={followsUserLocation}
+          showsMyLocationButton={false}
+          showsCompass
+          rotateEnabled={false}
+          onMapReady={onMapReady}
+          onRegionChangeComplete={throttledRegionChange}
+        >
+          {markers.map((marker) => (
+            <BuildingMarker key={marker.id} marker={marker} onPress={onMarkerPress} />
+          ))}
 
-        {hasRoute && visibleCoords.length > 1 ? (
-          <Polyline
-            coordinates={visibleCoords}
-            strokeColor={theme.colors.primary}
-            strokeWidth={5}
-            lineCap="round"
-            lineJoin="round"
-          />
-        ) : null}
-
-        {hasRoute && showStartDot ? (
-          <Circle
-            center={route[0]}
-            radius={6}
-            fillColor={theme.colors.primaryDark}
-            strokeColor="#FFFFFF"
-            strokeWidth={2}
-          />
-        ) : null}
-
-        {hasRoute && showEndDot ? (
-          <Circle
-            center={route[route.length - 1]}
-            radius={6}
-            fillColor={theme.colors.accent}
-            strokeColor="#FFFFFF"
-            strokeWidth={2}
-          />
-        ) : null}
-
-        {userLocation && !showsUserLocation ? (
-          <>
-            <Circle
-              center={userLocation}
-              radius={18}
-              fillColor="rgba(33,150,243,0.15)"
-              strokeColor="transparent"
+          {hasRoute && visibleCoords.length > 1 ? (
+            <Polyline
+              coordinates={visibleCoords}
+              strokeColor={theme.colors.primary}
+              strokeWidth={5}
+              lineCap="round"
+              lineJoin="round"
             />
+          ) : null}
+
+          {hasRoute && showStartDot ? (
             <Circle
-              center={userLocation}
-              radius={7}
-              fillColor="#2196F3"
+              center={route[0]}
+              radius={6}
+              fillColor={theme.colors.primaryDark}
               strokeColor="#FFFFFF"
-              strokeWidth={2.5}
+              strokeWidth={2}
             />
-          </>
-        ) : null}
-      </MapView>
+          ) : null}
+
+          {hasRoute && showEndDot ? (
+            <Circle
+              center={route[route.length - 1]}
+              radius={6}
+              fillColor={theme.colors.accent}
+              strokeColor="#FFFFFF"
+              strokeWidth={2}
+            />
+          ) : null}
+
+          {userLocation && !showsUserLocation ? (
+            <>
+              <Circle
+                center={userLocation}
+                radius={18}
+                fillColor="rgba(33,150,243,0.15)"
+                strokeColor="transparent"
+              />
+              <Circle
+                center={userLocation}
+                radius={7}
+                fillColor="#2196F3"
+                strokeColor="#FFFFFF"
+                strokeWidth={2.5}
+              />
+            </>
+          ) : null}
+        </MapView>
+      )}
     </View>
   );
 }));
@@ -259,6 +276,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+  },
+  mapFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: theme.colors.mapTint,
+    gap: 8,
+  },
+  mapFallbackTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: theme.colors.text,
+    textAlign: 'center',
+  },
+  mapFallbackText: {
+    fontSize: 14,
+    fontFamily: 'DMSans_400Regular',
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 21,
   },
   markerDot: {
     width: 28,

@@ -774,7 +774,7 @@ function FAQ() {
 // ── Download CTA ───────────────────────────────────────────────────────────
 function DownloadCTA() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'exists' | 'error'>('idle');
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: '-60px' });
 
@@ -787,9 +787,12 @@ function DownloadCTA() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
+      const data = res.ok ? null : await res.json().catch(() => null);
       if (res.ok) {
         setStatus('success');
         // keep `email` so the confirmation message can display the address
+      } else if (data?.detail?.toLowerCase().includes('already on the waitlist')) {
+        setStatus('exists');
       } else {
         setStatus('error');
       }
@@ -846,7 +849,7 @@ function DownloadCTA() {
           </p>
 
           <AnimatePresence mode="wait">
-            {status === 'success' ? (
+            {status === 'success' || status === 'exists' ? (
               <motion.div
                 key="success"
                 initial={{ opacity: 0, scale: 0.95, y: 8 }}
@@ -858,11 +861,12 @@ function DownloadCTA() {
                 </div>
                 <div>
                   <p className="text-white font-semibold text-sm" style={{ fontFamily: 'Poppins' }}>
-                    You're on the waitlist!
+                    {status === 'exists' ? "You're already on the waitlist!" : "You're on the waitlist!"}
                   </p>
                   <p className="text-white/60 text-xs mt-1">
-                    We'll send a confirmation to <span className="text-white/80 font-medium">{email || 'your inbox'}</span>.
-                    Watch out for an email from PathFindr when iOS launches.
+                    {status === 'exists'
+                      ? `We'll email ${email || 'you'} as soon as the iOS app launches.`
+                      : <>We'll send a confirmation to <span className="text-white/80 font-medium">{email || 'your inbox'}</span>. Watch out for an email from PathFindr when iOS launches.</>}
                   </p>
                 </div>
               </motion.div>
@@ -877,7 +881,7 @@ function DownloadCTA() {
                   required
                   placeholder="your@student.lasustech.edu.ng"
                   value={email}
-                  onChange={e => { setEmail(e.target.value); if (status === 'error') setStatus('idle'); }}
+                  onChange={e => { setEmail(e.target.value); if (status === 'error' || status === 'exists') setStatus('idle'); }}
                   className="flex-1 px-5 py-3.5 rounded-full bg-white/15 border border-white/25 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40 backdrop-blur-sm text-sm transition-all"
                 />
                 <button

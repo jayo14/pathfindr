@@ -381,6 +381,17 @@ class WaitlistCreateView(generics.CreateAPIView):
     serializer_class = WaitlistSerializer
     permission_classes = (permissions.AllowAny,)
 
+    def create(self, request, *args, **kwargs):
+        email = (request.data or {}).get('email')
+        existing = Waitlist.objects.filter(email__iexact=email).first() if email else None
+        if existing is not None:
+            serializer = self.get_serializer(existing)
+            return Response(
+                {**serializer.data, 'detail': 'This email is already on the waitlist.'},
+                status=status.HTTP_200_OK,
+            )
+        return super().create(request, *args, **kwargs)
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # AI Chat
