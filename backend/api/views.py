@@ -10,6 +10,7 @@ from django.contrib.auth.models import User
 from django.db import connection
 from django.db.models import Q
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from openai import OpenAI
 try:
@@ -25,7 +26,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django_ratelimit.decorators import ratelimit
 
 from .models import Profile, Building, Event, LostItem, Survey, Waitlist
-from .routing import compute_route
+from .routing import compute_route, CAMPUS_NODES
 from .serializers import (
     BuildingSerializer,
     ChangePasswordSerializer,
@@ -185,9 +186,20 @@ class BuildingListView(generics.ListAPIView):
 
 
 class BuildingDetailView(generics.RetrieveAPIView):
-    """GET /buildings/<pk>/"""
+    """GET /buildings/<pk-or-code>/
+
+    Accepts either the numeric primary key (used by lists/maps) or the
+    building `code` slug (used by the AI assistant and QR codes, which return
+    routing-node slugs such as "library-complex").
+    """
     queryset = Building.objects.all()
     serializer_class = BuildingSerializer
+
+    def get_object(self):
+        lookup = self.kwargs[self.lookup_url_kwarg or 'pk']
+        if str(lookup).isdigit():
+            return get_object_or_404(Building, pk=int(lookup))
+        return get_object_or_404(Building, code=lookup)
     permission_classes = (permissions.AllowAny,)
 
 
@@ -507,116 +519,169 @@ class AIChatView(APIView):
             )
             augmented_msg = f"{user_message}\n[System hint: {hints}]"
 
-        if _sarvam_client or _ai_client:
-            system_prompt = build_building_context(follow_up_context)
-            messages = [{'role': 'system', 'content': system_prompt}]
-            for msg in history[-6:]:
-                messages.append({'role': msg['role'], 'content': msg['content']})
-            messages.append({'role': 'user', 'content': augmented_msg})
+        ai_resp = self._call_llm(history, augmented_msg, follow_up_context)
+        if ai_resp is not None:
+            return Response(ai_resp)
 
-            try:
-                if _sarvam_client:
-                    # Sarvam SDK: client.chat.completions(model=..., messages=[...])
-                    completion = _sarvam_client.chat.completions(
-                        model=AI_SARVAM_MODEL,
-                        messages=messages,
-                    )
-                else:
-                    # OpenAI-compatible SDK
-                    completion = _ai_client.chat.completions.create(
-                        model=AI_MODEL,
-                        messages=messages,
-                        temperature=0.3,
-                        max_tokens=400,
-                        response_format={'type': 'json_object'},
-                    )
-                parsed      = json.loads(completion.choices[0].message.content)
-                intent      = parsed.get('intent', 'general')
-                building_id = parsed.get('building_id')
-                new_ctx     = parsed.get('follow_up_context')
+        # LLM unavailable/unusable — fall back to deterministic campus routing.
+        return Response(self._rule_based_reply(user_message, follow_up_context, course_hints))
 
-                if not new_ctx and course_hints:
-                    h = course_hints[0]
-                    new_ctx = {'building_id': h['building_id'], 'building_name': h['building_name']}
+    # ── Helpers ────────────────────────────────────────────────────────────
+    def _call_llm(self, history, augmented_msg, follow_up_context):
+        """Call the LLM and return a normalised dict, or None if unusable."""
+        if not (_sarvam_client or _ai_client):
+            return None
 
-                route_data = None
-                if intent == 'navigate' and building_id:
-                    from .routing import CAMPUS_NODES
-                    dest = CAMPUS_NODES.get(building_id)
-                    if dest:
-                        route_data = compute_route(6.4666, 3.5963, dest[0], dest[1])
+        system_prompt = build_building_context(follow_up_context)
+        llm_messages = [{'role': 'system', 'content': system_prompt}]
+        for msg in history[-6:]:
+            llm_messages.append({'role': msg['role'], 'content': msg['content']})
+        llm_messages.append({'role': 'user', 'content': augmented_msg})
 
-                return Response({
-                    'role':            'assistant',
-                    'content':         parsed.get('response', ''),
-                    'buildingId':      building_id,
-                    'routeData':       route_data,
-                    'intent':          intent,
-                    'followUpContext': new_ctx,
-                })
-            except Exception:
-                pass  # fall through to keyword matching
+        try:
+            if _sarvam_client:
+                completion = _sarvam_client.chat.completions(
+                    model=AI_SARVAM_MODEL, messages=llm_messages,
+                )
+            else:
+                # OpenAI-compatible SDK (also drives Sarvam's /v1 endpoint).
+                # reasoning_effort='low' keeps Sarvam's thinking tokens from
+                # eating the whole budget and leaving an empty reply.
+                completion = _ai_client.chat.completions.create(
+                    model=AI_MODEL,
+                    messages=llm_messages,
+                    temperature=0.2,
+                    max_tokens=2000,
+                    response_format={'type': 'json_object'},
+                    extra_body={'reasoning_effort': 'low'},
+                )
+            parsed  = json.loads(completion.choices[0].message.content or '{}')
+            content = (parsed.get('response') or '').strip()
+            if not content:
+                return None
 
-        # ── Keyword fallback ──────────────────────────────────────────────
-        lower = user_message.lower()
+            intent      = parsed.get('intent', 'general')
+            building_id = parsed.get('building_id')
+            new_ctx     = parsed.get('follow_up_context')
+
+            route_data = None
+            if intent == 'navigate' and building_id:
+                dest = CAMPUS_NODES.get(building_id)
+                if dest:
+                    route_data = compute_route(6.4666, 3.5963, dest[0], dest[1])
+
+            return {
+                'role':            'assistant',
+                'content':         content,
+                'buildingId':      building_id,
+                'routeData':       route_data,
+                'intent':          intent,
+                'followUpContext': new_ctx,
+            }
+        except Exception as exc:
+            print(f"[AIChatView] LLM call failed, using fallback: {exc}")
+            return None
+
+    def _rule_based_reply(self, user_message, follow_up_context, course_hints):
+        """Deterministic campus assistant used when the LLM is unavailable."""
+        lower  = user_message.lower()
+        origin = (6.4666, 3.5963)
 
         if course_hints:
-            h = course_hints[0]
-            from .routing import CAMPUS_NODES
-            dest  = CAMPUS_NODES.get(h['building_id'])
-            route = compute_route(6.4666, 3.5963, dest[0], dest[1]) if dest else None
-            return Response({
-                'role':            'assistant',
-                'content':         f"{h['course_code']} is taught at {h['building_name']}. Route ready.",
-                'buildingId':      h['building_id'],
-                'routeData':       route,
-                'intent':          'navigate',
+            h    = course_hints[0]
+            dest = CAMPUS_NODES.get(h['building_id'])
+            route = compute_route(*origin, dest[0], dest[1]) if dest else None
+            return {
+                'role': 'assistant',
+                'content': f"{h['course_code']} is taught at {h['building_name']}. Route ready.",
+                'buildingId': h['building_id'], 'routeData': route,
+                'intent': 'navigate',
                 'followUpContext': {'building_id': h['building_id'], 'building_name': h['building_name']},
-            })
+            }
 
         KEYWORDS = {
-            'library':     'library-complex',
-            'ict':         'ict-center',
-            'engineering': 'engineering-block',
-            'admin':       'admin-tower',
-            'lab':         'science-labs',
-            'student hub': 'student-hub',
+            'library': 'library-complex', 'ict': 'ict-center',
+            'engineering': 'engineering-block', 'admin': 'admin-tower',
+            'lab': 'science-labs', 'student hub': 'student-hub',
+            'restroom': 'student-hub', 'toilet': 'student-hub',
+            'wifi': 'student-hub', 'food': 'student-hub',
+            'cafeteria': 'student-hub', 'canteen': 'student-hub',
+            'activities': 'student-hub',
         }
+        INFO_WORDS = ['about', 'what is', 'tell me', 'info', 'facilities',
+                      'description', 'where is', 'located', 'details']
+        NAV_WORDS  = ['route', 'get to', 'find', 'go to', 'navigate',
+                      'direction', 'how do i', 'how to', 'walk']
 
-        detected = None
-        if follow_up_context and follow_up_context.get('building_id'):
+        matches = [(kw, bid) for kw, bid in KEYWORDS.items() if kw in lower]
+
+        # Follow-up references like "near there" / "from there".
+        if not matches and follow_up_context and follow_up_context.get('building_id'):
             if any(p in lower for p in ['near there', 'from there', 'what about', 'parking']):
-                detected = follow_up_context['building_id']
-        if not detected:
-            for kw, bid in KEYWORDS.items():
-                if kw in lower:
-                    detected = bid
-                    break
+                matches = [('', follow_up_context['building_id'])]
 
-        if detected and any(k in lower for k in ['route', 'get to', 'find', 'where', 'go to', 'navigate']):
-            from .routing import CAMPUS_NODES
-            dest  = CAMPUS_NODES.get(detected)
-            route = compute_route(6.4666, 3.5963, dest[0], dest[1]) if dest else None
-            try:
-                b_obj = Building.objects.filter(code__icontains=detected.split('-')[0][:3].upper()).first()
-                name  = b_obj.name if b_obj else detected.replace('-', ' ').title()
-            except Exception:
-                name = detected.replace('-', ' ').title()
-            return Response({
-                'role':            'assistant',
-                'content':         f"Guiding you to {name}! Route: {route.get('distanceMeters', 0)}m, ~{route.get('durationMinutes', 1)} min.",
-                'buildingId':      detected,
-                'routeData':       route,
-                'intent':          'navigate',
-                'followUpContext': {'building_id': detected, 'building_name': name},
-            })
+        # Source -> destination routing, e.g. "from the library to the labs".
+        if len(matches) >= 2 and matches[0][1] != matches[-1][1]:
+            src_bid, dst_bid = matches[0][1], matches[-1][1]
+            src, dst = CAMPUS_NODES.get(src_bid), CAMPUS_NODES.get(dst_bid)
+            if src and dst:
+                route    = compute_route(src[0], src[1], dst[0], dst[1])
+                src_name = Building.objects.filter(code=src_bid).first()
+                dst_name = Building.objects.filter(code=dst_bid).first()
+                return {
+                    'role': 'assistant',
+                    'content': (f"Route from {src_name.name if src_name else src_bid} "
+                                f"to {dst_name.name if dst_name else dst_bid}: "
+                                f"{route.get('distanceMeters', 0)}m, "
+                                f"~{route.get('durationMinutes', 1)} min."),
+                    'buildingId': dst_bid, 'routeData': route,
+                    'intent': 'navigate',
+                    'followUpContext': {'building_id': dst_bid,
+                                        'building_name': dst_name.name if dst_name else dst_bid},
+                }
 
-        return Response({
-            'role':            'assistant',
-            'content':         "Ask me to find a building — e.g. 'How do I get to the library?'",
-            'intent':          'general',
-            'followUpContext': None,
-        })
+        if matches:
+            bid = matches[-1][1]
+            b   = Building.objects.filter(code=bid).first()
+            name = b.name if b else bid.replace('-', ' ').title()
+
+            if any(w in lower for w in INFO_WORDS):
+                return {
+                    'role': 'assistant',
+                    'content': f"{name}: {b.description}" if b else f"{name} is on campus.",
+                    'buildingId': bid, 'intent': 'info',
+                    'followUpContext': {'building_id': bid, 'building_name': name},
+                }
+
+            if any(w in lower for w in NAV_WORDS) or bid in [m[1] for m in matches]:
+                dest  = CAMPUS_NODES.get(bid)
+                route = compute_route(*origin, dest[0], dest[1]) if dest else None
+                return {
+                    'role': 'assistant',
+                    'content': (f"Guiding you to {name}! Route: "
+                                f"{route.get('distanceMeters', 0)}m, "
+                                f"~{route.get('durationMinutes', 1)} min."),
+                    'buildingId': bid, 'routeData': route,
+                    'intent': 'navigate',
+                    'followUpContext': {'building_id': bid, 'building_name': name},
+                }
+
+        if any(w in lower for w in ['hi', 'hello', 'hey', 'good morning',
+                                    'good afternoon', 'help']):
+            return {
+                'role': 'assistant',
+                'content': ("Hi! I'm your LASUSTECH campus guide. Ask me to navigate to a "
+                            "building (e.g. \"How do I get to the library?\") or tell you about a place."),
+                'intent': 'general',
+            }
+
+        return {
+            'role': 'assistant',
+            'content': ("I can help you find and navigate to campus buildings like the library, "
+                        "ICT centre, engineering block, admin tower, science labs and student hub. "
+                        'Try "How do I get to the library?".'),
+            'intent': 'general',
+        }
 
 # ── Compatibility alias ───────────────────────────────────────────────────
 # urls.py imports EventListView; we expose it as the EventViewSet list action
