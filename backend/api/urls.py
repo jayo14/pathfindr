@@ -67,7 +67,7 @@ urlpatterns = [
     # ── Buildings ──────────────────────────────────────────────────────────
     path('buildings/',           BuildingListView.as_view(),   name='buildings'),
     path('buildings/search/',    BuildingSearchView.as_view(), name='building-search'),
-    path('buildings/<int:pk>/',  BuildingDetailView.as_view(), name='building-detail'),
+    path('buildings/<str:pk>/',  BuildingDetailView.as_view(), name='building-detail'),
 
     # ── Events (direct path, backed by EventListView alias) ───────────────
     # The router below also registers /events/ and /events/<pk>/ via EventViewSet.
